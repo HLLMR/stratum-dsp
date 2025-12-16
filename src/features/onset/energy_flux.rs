@@ -11,12 +11,12 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::features::onset::energy_flux::detect_energy_flux_onsets;
+//! use stratum_dsp::features::onset::energy_flux::detect_energy_flux_onsets;
 //!
 //! let samples = vec![0.0f32; 44100 * 30]; // 30 seconds of audio
 //! let onsets = detect_energy_flux_onsets(&samples, 2048, 512, -20.0)?;
 //! println!("Found {} onsets", onsets.len());
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -58,11 +58,11 @@ const EPSILON: f32 = 1e-10;
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::features::onset::energy_flux::detect_energy_flux_onsets;
+/// use stratum_dsp::features::onset::energy_flux::detect_energy_flux_onsets;
 ///
 /// let samples = vec![0.0f32; 44100];
 /// let onsets = detect_energy_flux_onsets(&samples, 2048, 512, -20.0)?;
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn detect_energy_flux_onsets(
     samples: &[f32],

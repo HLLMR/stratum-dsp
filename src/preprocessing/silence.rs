@@ -12,12 +12,12 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::preprocessing::silence::{detect_and_trim, SilenceDetector};
+//! use stratum_dsp::preprocessing::silence::{detect_and_trim, SilenceDetector};
 //!
 //! let samples = vec![0.0f32; 44100 * 5]; // 5 seconds
 //! let detector = SilenceDetector::default();
 //! let (trimmed, silence_map) = detect_and_trim(&samples, 44100, detector)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -83,7 +83,7 @@ pub struct SilenceRegion {
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::preprocessing::silence::{detect_and_trim, SilenceDetector};
+/// use stratum_dsp::preprocessing::silence::{detect_and_trim, SilenceDetector};
 ///
 /// let mut samples = vec![0.0f32; 44100 * 5];
 /// // Add some audio in the middle
@@ -96,7 +96,7 @@ pub struct SilenceRegion {
 ///
 /// println!("Trimmed from {} to {} samples", samples.len(), trimmed.len());
 /// println!("Found {} silence regions", silence_map.len());
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn detect_and_trim(
     samples: &[f32],

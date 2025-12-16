@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::features::onset::consensus::{vote_onsets, OnsetConsensus};
+//! use stratum_dsp::features::onset::consensus::{vote_onsets, OnsetConsensus};
 //!
 //! // Note: All onsets must be in sample positions (convert frame indices if needed)
 //! let consensus = OnsetConsensus {
@@ -24,7 +24,7 @@
 //!
 //! let weights = [0.25, 0.25, 0.25, 0.25]; // Equal weights
 //! let candidates = vote_onsets(consensus, weights, 50, 44100)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -83,7 +83,7 @@ pub struct OnsetConsensus {
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::features::onset::consensus::{vote_onsets, OnsetConsensus};
+/// use stratum_dsp::features::onset::consensus::{vote_onsets, OnsetConsensus};
 ///
 /// // Note: All onsets must be in sample positions
 /// // If using spectral_flux, hfc, or hpss, convert frame indices:
@@ -106,7 +106,7 @@ pub struct OnsetConsensus {
 ///     println!("Onset at {:.3}s: confidence={:.2}, voted_by={}", 
 ///              candidate.time_seconds, candidate.confidence, candidate.voted_by);
 /// }
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn vote_onsets(
     consensus: OnsetConsensus,

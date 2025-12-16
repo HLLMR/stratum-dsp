@@ -12,12 +12,12 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::preprocessing::channel_mixer::{stereo_to_mono, ChannelMixMode};
+//! use stratum_dsp::preprocessing::channel_mixer::{stereo_to_mono, ChannelMixMode};
 //!
 //! let left = vec![0.5f32; 44100];
 //! let right = vec![0.3f32; 44100];
 //! let mono = stereo_to_mono(&left, &right, ChannelMixMode::Mono)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -65,7 +65,7 @@ pub enum ChannelMixMode {
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::preprocessing::channel_mixer::{stereo_to_mono, ChannelMixMode};
+/// use stratum_dsp::preprocessing::channel_mixer::{stereo_to_mono, ChannelMixMode};
 ///
 /// let left = vec![0.5f32; 44100];
 /// let right = vec![0.3f32; 44100];
@@ -75,7 +75,7 @@ pub enum ChannelMixMode {
 ///
 /// // Keep louder channel
 /// let dominant = stereo_to_mono(&left, &right, ChannelMixMode::Dominant)?;
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn stereo_to_mono(
     left: &[f32],

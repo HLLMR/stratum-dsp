@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::preprocessing::normalization::{
+//! use stratum_dsp::preprocessing::normalization::{
 //!     normalize, NormalizationConfig, NormalizationMethod
 //! };
 //!
@@ -20,7 +20,7 @@
 //! };
 //!
 //! let metadata = normalize(&mut samples, config, 44100.0)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -469,7 +469,7 @@ fn normalize_lufs(
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::preprocessing::normalization::{
+/// use stratum_dsp::preprocessing::normalization::{
 ///     normalize, NormalizationConfig, NormalizationMethod
 /// };
 ///
@@ -482,7 +482,7 @@ fn normalize_lufs(
 ///
 /// let metadata = normalize(&mut samples, config, 44100.0)?;
 /// println!("Applied gain: {:.2} dB", metadata.gain_db);
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn normalize(
     samples: &mut [f32],

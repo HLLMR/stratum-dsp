@@ -71,14 +71,20 @@ pub struct AnalysisResult {
     
     /// Analysis metadata
     pub metadata: AnalysisMetadata,
-    
-    /// Processing time in milliseconds
-    pub processing_time_ms: u32,
 }
 
 /// Analysis metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisMetadata {
+    /// Audio duration in seconds
+    pub duration_seconds: f32,
+    
+    /// Sample rate in Hz
+    pub sample_rate: u32,
+    
+    /// Processing time in milliseconds
+    pub processing_time_ms: f32,
+    
     /// Algorithm version
     pub algorithm_version: String,
     
@@ -90,6 +96,9 @@ pub struct AnalysisMetadata {
     
     /// Analysis flags
     pub flags: Vec<AnalysisFlag>,
+    
+    /// Confidence warnings (low confidence, ambiguous results, etc.)
+    pub confidence_warnings: Vec<String>,
 }
 
 // Re-export for convenience

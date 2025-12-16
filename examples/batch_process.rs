@@ -2,7 +2,7 @@
 //!
 //! This example demonstrates how to process multiple files efficiently.
 
-use stratum_audio_analysis::{analyze_audio, AnalysisConfig};
+use stratum_dsp::{analyze_audio, AnalysisConfig};
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

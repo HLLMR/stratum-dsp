@@ -11,12 +11,12 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::features::onset::spectral_flux::detect_spectral_flux_onsets;
+//! use stratum_dsp::features::onset::spectral_flux::detect_spectral_flux_onsets;
 //!
 //! // fft_magnitudes is a spectrogram: Vec<Vec<f32>> where each inner Vec is a frame
 //! let fft_magnitudes = vec![vec![0.0f32; 1024]; 100]; // 100 frames, 1024 bins each
 //! let onsets = detect_spectral_flux_onsets(&fft_magnitudes, 0.8)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -58,13 +58,13 @@ const EPSILON: f32 = 1e-10;
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::features::onset::spectral_flux::detect_spectral_flux_onsets;
+/// use stratum_dsp::features::onset::spectral_flux::detect_spectral_flux_onsets;
 ///
 /// // Example: 100 frames, each with 1024 frequency bins
 /// let fft_magnitudes = vec![vec![0.0f32; 1024]; 100];
 /// let onsets = detect_spectral_flux_onsets(&fft_magnitudes, 0.8)?;
 /// println!("Found {} onsets", onsets.len());
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn detect_spectral_flux_onsets(
     fft_magnitudes: &[Vec<f32>],

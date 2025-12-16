@@ -11,12 +11,12 @@
 //! # Example
 //!
 //! ```no_run
-//! use stratum_audio_analysis::features::onset::hpss::{hpss_decompose, detect_hpss_onsets};
+//! use stratum_dsp::features::onset::hpss::{hpss_decompose, detect_hpss_onsets};
 //!
 //! let magnitude_spec = vec![vec![0.0f32; 1024]; 100];
 //! let (harmonic, percussive) = hpss_decompose(&magnitude_spec, 10)?;
 //! let onsets = detect_hpss_onsets(&percussive, 0.8)?;
-//! # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
 //! ```
 
 use crate::error::AnalysisError;
@@ -61,11 +61,11 @@ const DEFAULT_ITERATIONS: usize = 10;
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::features::onset::hpss::hpss_decompose;
+/// use stratum_dsp::features::onset::hpss::hpss_decompose;
 ///
 /// let magnitude_spec = vec![vec![0.5f32; 1024]; 100];
 /// let (harmonic, percussive) = hpss_decompose(&magnitude_spec, 10)?;
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn hpss_decompose(
     magnitude_spec: &[Vec<f32>],
@@ -264,12 +264,12 @@ fn apply_vertical_median_filter(
 /// # Example
 ///
 /// ```no_run
-/// use stratum_audio_analysis::features::onset::hpss::{hpss_decompose, detect_hpss_onsets};
+/// use stratum_dsp::features::onset::hpss::{hpss_decompose, detect_hpss_onsets};
 ///
 /// let magnitude_spec = vec![vec![0.5f32; 1024]; 100];
 /// let (_, percussive) = hpss_decompose(&magnitude_spec, 10)?;
 /// let onsets = detect_hpss_onsets(&percussive, 0.8)?;
-/// # Ok::<(), stratum_audio_analysis::AnalysisError>(())
+/// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
 pub fn detect_hpss_onsets(
     percussive_component: &[Vec<f32>],

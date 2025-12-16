@@ -23,13 +23,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stratum-audio-analysis = { git = "https://github.com/HLLMR/stratum-dsp" }
+stratum-dsp = { git = "https://github.com/HLLMR/stratum-dsp" }
 ```
 
 Basic usage:
 
 ```rust
-use stratum_audio_analysis::{analyze_audio, AnalysisConfig};
+use stratum_dsp::{analyze_audio, AnalysisConfig};
 
 // Load audio samples (mono, f32, normalized)
 let samples: Vec<f32> = vec![]; // Your audio data
