@@ -1,0 +1,35 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test fixtures (large audio files)
+tests/fixtures/*.wav
+tests/fixtures/*.mp3
+tests/fixtures/*.flac
+!tests/fixtures/.gitkeep
+
+# ML models
+models/*.onnx
+!models/.gitkeep
+
+# Benchmarks
+target/criterion/
+
+# Logs
+*.log
+
+# Reference documentation (internal)
+.reference/
+
