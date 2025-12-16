@@ -3,7 +3,6 @@
 //! Matches chroma distribution against Krumhansl-Kessler templates.
 
 use super::{templates::KeyTemplates, KeyDetectionResult};
-use crate::analysis::result::Key;
 
 /// Detect musical key from chroma vectors
 ///
@@ -17,7 +16,7 @@ use crate::analysis::result::Key;
 /// Key detection result with confidence
 pub fn detect_key(
     chroma_vectors: &[Vec<f32>],
-    templates: &KeyTemplates,
+    _templates: &KeyTemplates,
 ) -> Result<KeyDetectionResult, crate::error::AnalysisError> {
     // TODO: Implement key detection
     // See audio-analysis-engine-spec.md Section 2.6.2

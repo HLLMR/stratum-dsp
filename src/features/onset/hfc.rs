@@ -16,7 +16,7 @@
 pub fn detect_hfc_onsets(
     fft_magnitudes: &[Vec<f32>],
     sample_rate: u32,
-    threshold_percentile: f32,
+    _threshold_percentile: f32,
 ) -> Result<Vec<usize>, crate::error::AnalysisError> {
     // TODO: Implement HFC onset detection
     // See audio-analysis-engine-spec.md Section 2.2.4

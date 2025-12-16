@@ -25,8 +25,8 @@ pub enum ChannelMixMode {
 ///
 /// Mono samples
 pub fn stereo_to_mono(
-    left: &[f32],
-    right: &[f32],
+    _left: &[f32],
+    _right: &[f32],
     mode: ChannelMixMode,
 ) -> Result<Vec<f32>, crate::error::AnalysisError> {
     // TODO: Implement channel mixing

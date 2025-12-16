@@ -18,7 +18,7 @@ use super::{BpmCandidate, BpmEstimate};
 pub fn merge_bpm_candidates(
     autocorr: Vec<BpmCandidate>,
     comb: Vec<BpmCandidate>,
-    octave_tolerance_cents: f32,
+    _octave_tolerance_cents: f32,
 ) -> Result<Vec<BpmEstimate>, crate::error::AnalysisError> {
     // TODO: Implement candidate merging with octave error handling
     // See audio-analysis-engine-spec.md Section 2.3.4

@@ -13,8 +13,8 @@
 /// Vector of (index, value) pairs for detected peaks
 pub fn find_peaks(
     signal: &[f32],
-    threshold: f32,
-    min_distance: usize,
+    _threshold: f32,
+    _min_distance: usize,
 ) -> Vec<(usize, f32)> {
     // TODO: Implement robust peak picking
     // See audio-analysis-engine-spec.md Section 2.3.4

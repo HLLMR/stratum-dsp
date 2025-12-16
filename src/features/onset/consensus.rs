@@ -30,10 +30,10 @@ pub struct OnsetConsensus {
 ///
 /// Vector of onset candidates with confidence scores
 pub fn vote_onsets(
-    consensus: OnsetConsensus,
-    weights: [f32; 4],
-    tolerance_ms: u32,
-    sample_rate: u32,
+    _consensus: OnsetConsensus,
+    _weights: [f32; 4],
+    _tolerance_ms: u32,
+    _sample_rate: u32,
 ) -> Result<Vec<OnsetCandidate>, crate::error::AnalysisError> {
     // TODO: Implement consensus voting
     // See audio-analysis-engine-spec.md Section 2.2.6

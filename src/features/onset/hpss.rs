@@ -14,7 +14,7 @@
 /// Tuple of (harmonic, percussive) spectrograms
 pub fn hpss_decompose(
     magnitude_spec: &[Vec<f32>],
-    margin: usize,
+    _margin: usize,
 ) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), crate::error::AnalysisError> {
     // TODO: Implement HPSS decomposition
     // See audio-analysis-engine-spec.md Section 2.2.5
@@ -24,8 +24,8 @@ pub fn hpss_decompose(
 
 /// Detect onsets in percussive component
 pub fn detect_hpss_onsets(
-    percussive_component: &[Vec<f32>],
-    threshold_percentile: f32,
+    _percussive_component: &[Vec<f32>],
+    _threshold_percentile: f32,
 ) -> Result<Vec<usize>, crate::error::AnalysisError> {
     // TODO: Implement HPSS onset detection
     Err(crate::error::AnalysisError::NotImplemented("HPSS onset detection not yet implemented".to_string()))

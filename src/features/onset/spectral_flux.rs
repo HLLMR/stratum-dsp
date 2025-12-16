@@ -14,7 +14,7 @@
 /// Vector of onset frame indices
 pub fn detect_spectral_flux_onsets(
     fft_magnitudes: &[Vec<f32>],
-    threshold_percentile: f32,
+    _threshold_percentile: f32,
 ) -> Result<Vec<usize>, crate::error::AnalysisError> {
     // TODO: Implement spectral flux onset detection
     // See audio-analysis-engine-spec.md Section 2.2.3

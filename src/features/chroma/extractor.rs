@@ -17,8 +17,8 @@
 pub fn extract_chroma(
     samples: &[f32],
     sample_rate: u32,
-    frame_size: usize,
-    hop_size: usize,
+    _frame_size: usize,
+    _hop_size: usize,
 ) -> Result<Vec<Vec<f32>>, crate::error::AnalysisError> {
     // TODO: Implement chroma extraction
     // See audio-analysis-engine-spec.md Section 2.5.1

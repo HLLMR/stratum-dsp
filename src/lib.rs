@@ -86,7 +86,7 @@ pub use error::AnalysisError;
 pub fn analyze_audio(
     samples: &[f32],
     sample_rate: u32,
-    config: AnalysisConfig,
+    _config: AnalysisConfig,
 ) -> Result<AnalysisResult, AnalysisError> {
     // TODO: Implement full analysis pipeline
     // Phase 1A: Preprocessing

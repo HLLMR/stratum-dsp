@@ -14,9 +14,9 @@ use crate::analysis::result::AnalysisResult;
 ///
 /// Refined analysis result
 pub fn refine_with_ml(
-    initial_result: &AnalysisResult,
-    features: &[f32],
-    model: &super::onnx_model::OnnxModel,
+    _initial_result: &AnalysisResult,
+    _features: &[f32],
+    _model: &super::onnx_model::OnnxModel,
 ) -> Result<AnalysisResult, crate::error::AnalysisError> {
     // TODO: Implement ML refinement
     // See audio-analysis-engine-spec.md Section 3.1

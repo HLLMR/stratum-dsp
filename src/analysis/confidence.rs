@@ -29,7 +29,7 @@ pub struct AnalysisConfidence {
 /// # Returns
 ///
 /// Confidence scores
-pub fn compute_confidence(result: &AnalysisResult) -> AnalysisConfidence {
+pub fn compute_confidence(_result: &AnalysisResult) -> AnalysisConfidence {
     // TODO: Implement confidence scoring
     // See audio-analysis-engine-spec.md Section 2.7.1
     log::debug!("Computing confidence scores");

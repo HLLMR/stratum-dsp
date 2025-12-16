@@ -25,6 +25,7 @@ impl OnnxModel {
     /// Confidence boost factor [0.5, 1.5]
     pub fn infer(&self, features: &[f32]) -> Result<f32, crate::error::AnalysisError> {
         log::debug!("Running ONNX inference on {} features", features.len());
+        let _ = features; // Suppress unused warning
         Err(crate::error::AnalysisError::NotImplemented("ONNX inference not yet implemented".to_string()))
     }
 }

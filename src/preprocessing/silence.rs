@@ -36,8 +36,8 @@ impl Default for SilenceDetector {
 /// Trimmed samples and silence map
 pub fn detect_and_trim(
     samples: &[f32],
-    sample_rate: u32,
-    detector: SilenceDetector,
+    _sample_rate: u32,
+    _detector: SilenceDetector,
 ) -> Result<(Vec<f32>, Vec<(usize, usize)>), crate::error::AnalysisError> {
     // TODO: Implement silence detection
     // See audio-analysis-engine-spec.md Section 2.1.2

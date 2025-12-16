@@ -26,10 +26,10 @@ impl BayesianBeatTracker {
     }
     
     /// Update with new evidence
-    pub fn update(&mut self, new_evidence: f32) -> Result<(), crate::error::AnalysisError> {
+    pub fn update(&mut self, _new_evidence: f32) -> Result<(), crate::error::AnalysisError> {
         // TODO: Implement Bayesian update
         // See audio-analysis-engine-spec.md Section 2.4.2
-        log::debug!("Updating Bayesian tracker with evidence: {}", new_evidence);
+        log::debug!("Updating Bayesian tracker with evidence: {}", _new_evidence);
         Err(crate::error::AnalysisError::NotImplemented("Bayesian beat tracking not yet implemented".to_string()))
     }
 }

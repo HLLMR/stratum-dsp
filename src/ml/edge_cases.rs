@@ -11,7 +11,7 @@ use crate::analysis::result::AnalysisResult;
 /// # Returns
 ///
 /// Vector of detected edge case flags
-pub fn detect_edge_cases(result: &AnalysisResult) -> Vec<String> {
+pub fn detect_edge_cases(_result: &AnalysisResult) -> Vec<String> {
     // TODO: Implement edge case detection
     log::debug!("Detecting edge cases");
     vec![]

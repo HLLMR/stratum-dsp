@@ -18,7 +18,7 @@ pub fn detect_energy_flux_onsets(
     samples: &[f32],
     frame_size: usize,
     hop_size: usize,
-    threshold_db: f32,
+    _threshold_db: f32,
 ) -> Result<Vec<usize>, crate::error::AnalysisError> {
     // TODO: Implement energy flux onset detection
     // See audio-analysis-engine-spec.md Section 2.2.2
