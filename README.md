@@ -11,11 +11,14 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 
 ## Status
 
-🚧 **Under Active Development** - Phase 1 (Classical DSP) in progress
+✅ **Phase 1A Complete** - Preprocessing & Onset Detection implemented and tested  
+🚧 **Phase 1B In Progress** - Period Estimation (BPM Detection)
 
 Target accuracy:
 - BPM: 88% (±2 BPM tolerance)
 - Key: 77% (exact match)
+
+**Current Progress**: 12.5% (1/8 weeks)
 
 ## Quick Start
 
@@ -63,13 +66,17 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
 ## Development Roadmap
 
 ### Phase 1: Classical DSP (Weeks 1-5)
-- [x] Project setup and scaffolding
-- [ ] Preprocessing (normalization, silence detection)
-- [ ] Onset detection (4 methods + consensus)
-- [ ] Period estimation (BPM detection)
-- [ ] Beat tracking (HMM)
-- [ ] Key detection (chroma + templates)
-- [ ] Integration and tuning
+- [x] **Phase 1A**: Preprocessing & Onset Detection ✅
+  - [x] Normalization (peak, RMS, LUFS with K-weighting)
+  - [x] Silence detection and trimming
+  - [x] Channel mixing (stereo to mono)
+  - [x] Onset detection (energy flux, spectral flux, HFC, HPSS)
+  - [x] Consensus voting algorithm
+  - [x] 80 tests (75 unit + 5 integration)
+- [ ] **Phase 1B**: Period Estimation (BPM Detection)
+- [ ] **Phase 1C**: Beat Tracking (HMM)
+- [ ] **Phase 1D**: Key Detection (chroma + templates)
+- [ ] **Phase 1E**: Integration and tuning
 
 ### Phase 2: ML Refinement (Weeks 6-8)
 - [ ] Data collection (1000+ tracks)
