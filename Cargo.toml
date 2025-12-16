@@ -1,5 +1,5 @@
 [package]
-name = "stratum-audio-analysis"
+name = "stratum-dsp"
 version = "0.1.0"
 edition = "2021"
 authors = ["HLLMR"]
@@ -31,13 +31,14 @@ rayon = "1.8"
 [dev-dependencies]
 env_logger = "0.11"
 criterion = { version = "0.5", features = ["html_reports"] }
+hound = "3.5"  # WAV file reading for integration tests
 
 [features]
 default = []
 ml = ["ort"]
 
 [lib]
-name = "stratum_audio_analysis"
+name = "stratum_dsp"
 path = "src/lib.rs"
 
 [[bench]]
