@@ -12,6 +12,7 @@ pub mod energy_flux;
 pub mod hfc;
 pub mod hpss;
 pub mod spectral_flux;
+pub mod threshold;
 
 /// Onset candidate with confidence
 #[derive(Debug, Clone)]
