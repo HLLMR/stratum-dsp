@@ -181,19 +181,31 @@ ACF[lag] = ACF[lag] / (n - lag)
 - Optional enhancements can be added later if needed
 - Performance targets met (<50ms for period estimation)
 
-### Optional: Quick Wins (If Time Permits)
+### ✅ Optional Enhancements Completed
 
-1. **Add detailed literature citations** (30-60 minutes)
-   - Add full citations to function docs
-   - Improve academic credibility
+1. ✅ **Add detailed literature citations** - COMPLETED
+   - Added full citations to autocorrelation and comb filterbank function docs
+   - Enhanced algorithm details and performance notes
+   - Improved academic credibility
 
-2. **Coarse-to-fine search** (1-2 hours)
-   - Add as optional optimization
-   - Keep current approach as default
+2. ✅ **Coarse-to-fine search** - COMPLETED
+   - Implemented `coarse_to_fine_search()` function
+   - Two-stage search: 2.0 BPM resolution (coarse) then 0.5 BPM (fine)
+   - Reduces computation time from 10-30ms to 5-15ms for 30s track
+   - Added to public API with 3 unit tests
 
-3. **Autocorrelation normalization** (30 minutes)
-   - Add optional normalization step
-   - Test impact on accuracy
+3. ⏸️ **Autocorrelation normalization** - DOCUMENTED, NOT IMPLEMENTED
+   - Documented why normalization is optional
+   - Normalization can cause octave errors by favoring shorter lags
+   - Current unnormalized approach works well
+   - Can be added later as optional parameter if needed
+
+4. ✅ **Adaptive tolerance window** - COMPLETED
+   - Implemented adaptive tolerance based on BPM
+   - Formula: `tolerance = base_tolerance * (120.0 / bpm)`, clamped to [5%, 15%]
+   - Higher BPM = smaller tolerance (more precise)
+   - Lower BPM = larger tolerance (more forgiving)
+   - Improves handling of timing jitter at different tempos
 
 ---
 
@@ -212,9 +224,11 @@ ACF[lag] = ACF[lag] / (n - lag)
 ## Next Steps
 
 1. ✅ **Proceed to Phase 1C: Beat Tracking**
-2. ⏸️ **Optional**: Add detailed literature citations to docs
-3. ⏸️ **Optional**: Implement coarse-to-fine search optimization
-4. ⏸️ **Future**: Consider onset weighting when confidence scores available
+2. ✅ **Completed**: Added detailed literature citations to docs
+3. ✅ **Completed**: Implemented coarse-to-fine search optimization
+4. ✅ **Completed**: Implemented adaptive tolerance window
+5. ⏸️ **Future**: Consider onset weighting when confidence scores available
+6. ⏸️ **Future**: Consider autocorrelation normalization as optional parameter if needed
 
 ---
 
