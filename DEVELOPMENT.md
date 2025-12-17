@@ -173,33 +173,97 @@ Four independent methods with consensus voting:
 
 ### 3. Period Estimation
 
-#### Autocorrelation
+**⚠️ CRITICAL PIVOT REQUIRED**: Current implementation (autocorrelation + comb filterbank) is fundamentally limited to ~30% accuracy due to frame-by-frame analysis. Complete replacement with Fourier tempogram (Grosche et al. 2012) is required. See `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for complete specification.
+
+#### Current Implementation (Phase 1B - TO BE REPLACED)
+
+**Autocorrelation** (Ellis & Pikrakis 2006):
 - Convert onset list to binary "beat signal"
 - Compute autocorrelation (FFT-accelerated O(n log n))
 - Find peaks in ACF
 - Convert lag → BPM: `BPM = (60 * sample_rate) / (lag * hop_size)`
 - Filter within [min_bpm, max_bpm] range
-- **Reference**: Ellis & Pikrakis (2006)
+- **Problem**: Frame-by-frame analysis, subharmonic errors
 
-#### Comb Filterbank
+**Comb Filterbank** (Gkiokas et al. 2012):
 - For each candidate BPM (80-180, configurable resolution)
 - Compute expected beat interval
 - Score by counting onsets within adaptive tolerance window
-  - Adaptive tolerance: `tolerance = base_tolerance * (120.0 / bpm)`, clamped to [5%, 15%]
-  - Higher BPM = smaller tolerance (more precise)
-  - Lower BPM = larger tolerance (more forgiving)
-- Normalize score by beat count
-- **Reference**: Gkiokas et al. (2012)
-- **Optimization**: Coarse-to-fine search available (`coarse_to_fine_search()`)
-  - Stage 1: 2.0 BPM resolution (coarse)
-  - Stage 2: 0.5 BPM resolution around best candidate (fine)
-  - Reduces computation time by ~50%
+- **Problem**: Frame-by-frame analysis, limited accuracy
 
-#### Candidate Filtering
-- Merge autocorrelation + comb results
-- Handle octave errors (2x or 0.5x BPM)
-- Group candidates within octave tolerance
-- Boost confidence if both methods agree
+**Result**: 30% accuracy, fundamental architectural limitation
+
+#### New Implementation (Phase 1F - TEMPOGRAM)
+
+**Novelty Curve Extraction**:
+- **Spectral Flux**: Measure frame-to-frame spectral changes
+  - Formula: `flux[i] = sqrt(sum(max(0, curr[j] - prev[j])²))`
+  - Captures harmonic changes (all instruments)
+  - Better than energy flux for complex music
+- **Energy Flux**: Measure frame-to-frame energy changes
+  - Formula: `E_flux[n] = max(0, E[n] - E[n-1])`
+  - Captures amplitude changes (drums, bass)
+- **High-Frequency Content (HFC)**: Weight higher frequencies
+  - Emphasizes percussive attacks
+  - Good for drums and percussion
+- **Combined Novelty**: Weighted voting across all three methods
+  - Consensus = more reliable than single method
+- **Reference**: Klapuri et al. (2006), Bello et al. (2005)
+
+**Tempogram Implementation (Dual Approach for Maximum Accuracy)**:
+
+**Autocorrelation Tempogram** (Grosche et al. 2012):
+- For each BPM hypothesis (40-240, 0.5 BPM resolution):
+  - Convert BPM to period in frames: `frames_per_beat = frame_rate / (BPM / 60.0)`
+  - Compute autocorrelation at this lag: `autocorr_sum += novelty[i] * novelty[i + frames_per_beat]`
+  - Normalize by count: `strength = autocorr_sum / count`
+- Find BPM with highest autocorrelation strength
+- Confidence based on peak prominence
+- **Advantages**: Arbitrary BPM resolution, direct hypothesis testing
+- **Expected**: 75-85% accuracy, 20-40ms for 30s track
+
+**FFT Tempogram** (Research shows more consistent):
+- Apply FFT to novelty curve: `fft_output = FFT(novelty_curve)`
+- Convert frequency bins to BPM: `BPM = Hz * 60`
+- Find BPM with highest FFT power
+- Confidence based on peak prominence
+- **Advantages**: More consistent results, faster (O(n log n)), better for harmonic structures
+- **Limitations**: Coarser resolution (~2 BPM) without interpolation
+- **Expected**: 75-85% accuracy, 10-20ms for 30s track
+
+**Comparison & Selection**:
+- Run both methods on same input
+- Compare results: use best method or ensemble
+- **Expected**: 85-92% accuracy (best of both), 30-60ms for 30s track
+
+**Hybrid Approach (Future Enhancement)**:
+- FFT tempogram: Fast coarse estimate (2 BPM resolution)
+- Autocorrelation refinement: Precise fine estimate (±5 BPM around FFT result, 0.5 BPM resolution)
+- **Benefits**: Speed (FFT) + Precision (autocorr) = Best of both
+- **Status**: Documented for future implementation after empirical comparison
+
+**Multi-Resolution Validation** (Schreiber & Müller 2018):
+- Run tempogram at 3 hop sizes (256, 512, 1024 samples)
+- Cross-resolution agreement validation
+- If all agree ± 2 BPM → high confidence
+- **Result**: 90%+ accuracy with multi-resolution
+
+**Architecture**:
+```
+STFT → Novelty Curve (3 methods) → [FFT Tempogram | Autocorr Tempogram] → Comparison & Selection → Multi-Resolution Validation → BPM + Confidence
+```
+
+**Dual Implementation**: Both FFT and autocorrelation tempogram run in parallel, best result selected or ensemble used.
+
+**Expected Performance**:
+- Single-resolution: 20-40ms for 30s track, 75-85% accuracy
+- Multi-resolution: 60-120ms for 30s track, 90%+ accuracy
+
+**References**:
+- Grosche et al. (2012): Core tempogram algorithm
+- Klapuri et al. (2006): Spectral flux novelty curves
+- Schreiber & Müller (2018): Multi-resolution analysis
+- Ellis (2007): Global analysis philosophy
 
 ### 4. Beat Tracking
 
@@ -304,7 +368,7 @@ Four independent methods with consensus voting:
 - [x] Main API implementation (`analyze_audio()`)
 - **Deliverable**: ✅ Complete - Onset detection module with 80 tests, production-ready code
 
-#### Phase 1B: Period Estimation (Week 2) ✅
+#### Phase 1B: Period Estimation (Week 2) ✅ → ⚠️ PIVOT REQUIRED
 - [x] Autocorrelation BPM estimation (FFT-accelerated, O(n log n))
 - [x] Comb filterbank BPM estimation
 - [x] Peak picking and candidate filtering
@@ -317,7 +381,8 @@ Four independent methods with consensus voting:
 - [x] Performance benchmarks: autocorrelation ~18.7µs, comb filterbank ~11.1µs, coarse-to-fine ~7.7µs (8-beat pattern)
 - [x] Full pipeline benchmark: ~11.6ms for 30s track (43x faster than 500ms target)
 - [x] Integrated into main `analyze_audio()` function
-- **Deliverable**: ✅ Complete - BPM estimation module with 32 tests, production-ready code with optimizations, benchmarked and validated
+- **Status**: ⚠️ **FUNDAMENTAL LIMITATION IDENTIFIED** - Frame-by-frame analysis caps accuracy at ~30%
+- **Deliverable**: ✅ Complete but requires replacement - See Phase 1F for tempogram pivot
 
 #### Phase 1C: Beat Tracking (Week 3) ✅
 - [x] HMM Viterbi beat tracker
@@ -357,6 +422,23 @@ Four independent methods with consensus voting:
 - [x] Confidence helper methods
 - [x] Full pipeline integration
 - **Deliverable**: ✅ v0.9-alpha with full classical DSP pipeline
+
+#### Phase 1F: Tempogram BPM Pivot (Critical Fix) ⏳
+- [ ] Novelty curve implementation (spectral flux, energy flux, HFC)
+- [ ] Autocorrelation tempogram (test each BPM hypothesis)
+- [ ] FFT tempogram (frequency-domain analysis)
+- [ ] Comparison & selection logic (choose best or ensemble)
+- [ ] Multi-resolution validation (3 hop sizes)
+- [ ] A/B testing framework (old vs new methods)
+- [ ] Integration and migration from old system
+- [ ] Comprehensive testing and validation
+- [ ] Performance benchmarks
+- [ ] Empirical comparison: measure accuracy for all methods
+- **Expected**: 85-92% accuracy (vs 30% current) - using best of both tempogram methods
+- **Timeline**: 3-4 hours (both implementations + comparison)
+- **Deliverable**: v0.9.1-alpha with dual tempogram BPM detection
+- **Deprecation Plan**: Mark old methods as deprecated after validation, remove in v0.9.2
+- **See**: `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for complete specification
 
 ### Phase 2: ML Refinement (Weeks 6-8)
 
@@ -508,8 +590,12 @@ v1.0 is ready when:
 ## Reference Literature
 
 **Beat Tracking & Tempo Estimation**:
-- Ellis & Pikrakis (2006): "Real-time beat induction"
-- Gkiokas et al. (2012): "Dimensionality reduction for BPM estimation"
+- Ellis & Pikrakis (2006): "Real-time beat induction" (current implementation - to be replaced)
+- Gkiokas et al. (2012): "Dimensionality reduction for BPM estimation" (current implementation - to be replaced)
+- **Grosche et al. (2012): "Robust local features" - Fourier tempogram (NEW - Phase 1F)**
+- **Klapuri et al. (2006): "Analysis of the meter" - Spectral flux novelty (NEW - Phase 1F)**
+- **Schreiber & Müller (2018): "BLSTM tempo estimation" - Multi-resolution (NEW - Phase 1F)**
+- **Ellis (2007): "Beat tracking by dynamic programming" - Global analysis (NEW - Phase 1F)**
 - Böck et al. (2016): "Joint beat and downbeat tracking" (MIREX)
 
 **Key Detection**:

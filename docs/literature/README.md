@@ -31,10 +31,31 @@ This directory contains individual literature review documents for each research
   - Core algorithm for period detection
   - FFT-accelerated autocorrelation
 
+- **[Ellis (2007): Beat Tracking by Dynamic Programming](ellis_2007_beat_tracking_dp.md)**
+  - Foundation for onset-aligned beat tracking
+  - Global analysis approach (why global > local)
+  - Theoretical foundation for tempogram methods
+
 - **[Gkiokas et al. (2012): Dimensionality Reduction for BPM Estimation](gkiokas_2012_bpm_estimation.md)**
   - Comb filterbank approach for robust BPM estimation
   - Tests hypothesis tempos (80-180 BPM)
   - Alternative to autocorrelation method
+
+- **[Grosche et al. (2012): Robust Local Features for Remote Folk Music Identification](grosche_2012_tempogram.md)**
+  - Fourier tempogram algorithm (85%+ accuracy)
+  - Global analysis of spectral flux novelty curve
+  - Industry gold standard for tempo estimation
+  - Core algorithm for tempogram-based BPM detection
+
+- **[Klapuri et al. (2006): Analysis of the Meter in Acoustic Music Signals](klapuri_2006_meter_analysis.md)**
+  - Spectral novelty curves and spectral flux
+  - Why spectral flux > energy flux for BPM estimation
+  - Foundation for tempogram novelty curve computation
+
+- **[Schreiber & Müller (2018): A Single-Layer BLSTM Acoustic Model for Music Tempo Estimation](schreiber_2018_blstm_tempo.md)**
+  - Multi-resolution analysis for robust tempo estimation
+  - Temporal constraint modeling
+  - Enhances tempogram with multi-resolution aggregation
 
 - **[Böck et al. (2016): Joint Beat and Downbeat Tracking](boeck_2016_beat_downbeat_tracking.md)**
   - HMM-based beat tracking using Viterbi algorithm
@@ -100,8 +121,12 @@ This directory contains individual literature review documents for each research
 - **ML Refinement**: Schlüter & Böck (2014) - Phase 2
 
 ### BPM Estimation
-- **Autocorrelation**: Ellis & Pikrakis (2006)
-- **Comb Filterbank**: Gkiokas et al. (2012)
+- **Autocorrelation**: Ellis & Pikrakis (2006) - Current implementation
+- **Comb Filterbank**: Gkiokas et al. (2012) - Current implementation
+- **Tempogram (Fourier)**: Grosche et al. (2012) - Pivot implementation
+- **Spectral Flux Novelty**: Klapuri et al. (2006) - Foundation for tempogram
+- **Multi-Resolution**: Schreiber & Müller (2018) - Enhancement for tempogram
+- **Global Analysis**: Ellis (2007) - Theoretical foundation
 
 ### Beat Tracking
 - **HMM Viterbi**: Böck et al. (2016)

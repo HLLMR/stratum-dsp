@@ -4,7 +4,10 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 
 ## Features
 
-- **BPM Detection**: Multi-method onset detection with autocorrelation and comb filterbank
+- **BPM Detection**: Dual tempogram-based detection (Phase 1F - in progress)
+  - Current: Autocorrelation + comb filterbank (30% accuracy - to be deprecated)
+  - New: FFT tempogram + Autocorrelation tempogram (85-92% accuracy target)
+  - Strategy: Implement both, compare empirically, use best or ensemble
 - **Key Detection**: Chroma-based analysis with Krumhansl-Kessler template matching
 - **Beat Tracking**: HMM-based beat grid generation with tempo drift correction
 - **ML Refinement**: Optional ONNX model for edge case correction (Phase 2)
@@ -12,16 +15,19 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 ## Status
 
 ✅ **Phase 1A Complete** - Preprocessing & Onset Detection implemented and tested  
-✅ **Phase 1B Complete** - Period Estimation (BPM Detection) implemented and tested  
+⚠️ **Phase 1B Complete** - Period Estimation implemented but requires pivot (30% accuracy limitation)  
 ✅ **Phase 1C Complete** - Beat Tracking (HMM Viterbi) implemented and tested  
 ✅ **Phase 1D Complete** - Key Detection (Chroma + Templates) implemented and tested  
-✅ **Phase 1E Complete** - Integration & Tuning with confidence scoring
+✅ **Phase 1E Complete** - Integration & Tuning with confidence scoring  
+⏳ **Phase 1F In Progress** - Tempogram BPM Pivot (critical fix - 85-92% accuracy target)
 
 Target accuracy:
-- BPM: 88% (±2 BPM tolerance)
+- BPM: 88% (±2 BPM tolerance) - **Requires Phase 1F tempogram pivot**
 - Key: 77% (exact match)
 
-**Current Progress**: 62.5% (5/8 weeks) - Classical DSP pipeline complete, ready for Phase 2 ML refinement
+**Current Progress**: 62.5% (5/8 weeks) - Classical DSP pipeline complete, **tempogram pivot required before Phase 2**
+
+**Critical**: Current BPM detection limited to ~30% accuracy. Complete replacement with Fourier tempogram (Grosche et al. 2012) in progress. See `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for details.
 
 ## Quick Start
 
@@ -70,7 +76,10 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
 
 - **Preprocessing**: Normalization, silence detection, channel mixing
 - **Onset Detection**: Energy flux, spectral flux, HFC, HPSS with consensus voting
-- **Period Estimation**: Autocorrelation + comb filterbank BPM estimation
+- **Period Estimation**: 
+  - Current: Autocorrelation + comb filterbank (30% accuracy - to be deprecated after validation)
+  - New: Dual tempogram (FFT + Autocorrelation) with multi-resolution validation (85-92% accuracy target)
+  - Future: Hybrid approach (FFT coarse + autocorr fine) documented for enhancement
 - **Beat Tracking**: HMM Viterbi algorithm + Bayesian tempo tracking
 - **Chroma Extraction**: FFT → 12-semitone chroma vectors
 - **Key Detection**: Krumhansl-Kessler template matching (24 keys)
@@ -87,7 +96,7 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
   - [x] Onset detection (energy flux, spectral flux, HFC, HPSS)
   - [x] Consensus voting algorithm
   - [x] 80 tests (75 unit + 5 integration)
-- [x] **Phase 1B**: Period Estimation (BPM Detection) ✅
+- [x] **Phase 1B**: Period Estimation (BPM Detection) ✅ → ⚠️ PIVOT REQUIRED
   - [x] Autocorrelation-based BPM estimation (FFT-accelerated)
   - [x] Comb filterbank BPM estimation
   - [x] Peak picking and candidate filtering
@@ -95,6 +104,18 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
   - [x] Coarse-to-fine search optimization (5-15ms vs 10-30ms)
   - [x] Adaptive tolerance window (BPM-dependent)
   - [x] 32 unit tests + integration tests
+  - ⚠️ **Limitation**: Frame-by-frame analysis caps accuracy at ~30%
+- [ ] **Phase 1F**: Tempogram BPM Pivot ⏳
+  - [ ] Novelty curve (spectral flux, energy flux, HFC)
+  - [ ] Autocorrelation tempogram (test each BPM hypothesis)
+  - [ ] FFT tempogram (frequency-domain analysis)
+  - [ ] Comparison & selection logic (best method or ensemble)
+  - [ ] Multi-resolution validation (3 hop sizes)
+  - [ ] A/B testing framework (old vs new methods)
+  - [ ] Integration and migration
+  - [ ] Testing and validation
+  - [ ] Deprecation plan for old methods (after validation)
+  - **Target**: 85-92% accuracy (vs 30% current) - using best of both tempogram methods
 - [x] **Phase 1C**: Beat Tracking (HMM) ✅
   - [x] HMM Viterbi algorithm for beat sequence tracking
   - [x] Bayesian tempo tracking for variable-tempo tracks
