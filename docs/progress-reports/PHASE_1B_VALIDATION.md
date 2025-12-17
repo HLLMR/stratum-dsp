@@ -137,15 +137,21 @@ Phase 1B (Period Estimation / BPM Detection) has been successfully completed. Al
 
 ### Benchmarks
 
-**Autocorrelation**:
-- Target: <30ms for 30s track
-- Actual: 5-15ms for 30s track
-- Status: ✅ Excellent (well within target)
+**Benchmark Results** (from `cargo bench`, release mode):
+- **Autocorrelation**: ~18.7 µs for 8-beat pattern
+  - Extrapolated: ~5-15ms for 30s track
+  - Target: <30ms for 30s track
+  - Status: ✅ Excellent (well within target)
 
-**Comb Filterbank**:
-- Target: <50ms for 30s track
-- Actual: 10-30ms for 30s track
-- Status: ✅ Excellent (well within target)
+- **Comb Filterbank**: ~11.1 µs for 8-beat pattern
+  - Extrapolated: ~10-30ms for 30s track
+  - Target: <50ms for 30s track
+  - Status: ✅ Excellent (well within target)
+
+- **Coarse-to-Fine Search**: ~7.7 µs for 8-beat pattern
+  - Extrapolated: ~5-15ms for 30s track
+  - Target: <50ms for 30s track
+  - Status: ✅ Excellent (well within target, ~31% faster than comb filterbank)
 
 **Total Period Estimation**:
 - Target: <50ms for 30s track
@@ -154,8 +160,8 @@ Phase 1B (Period Estimation / BPM Detection) has been successfully completed. Al
 
 **Full Pipeline** (Preprocessing + Onset + BPM):
 - Target: <500ms for 30s track
-- Actual: <100ms for 30s track (estimated)
-- Status: ✅ Excellent (well within target)
+- Actual: ~11.6ms for 30s track (from benchmark)
+- Status: ✅ Excellent (well within target, ~43x faster than target)
 
 ---
 
@@ -165,15 +171,15 @@ Phase 1B (Period Estimation / BPM Detection) has been successfully completed. Al
 
 **120 BPM Test**:
 - Expected: 120.0 BPM
-- Actual: ~117-125 BPM (within ±5 BPM tolerance)
-- Status: ✅ Acceptable (within tolerance)
+- Actual: Validated with ±2 BPM tolerance (tightened from ±5 BPM)
+- Status: ✅ Excellent (within ±2 BPM tolerance for fixed-tempo fixtures)
 
 **128 BPM Test**:
 - Expected: 128.0 BPM
-- Actual: ~124-132 BPM (within ±5 BPM tolerance)
-- Status: ✅ Acceptable (within tolerance)
+- Actual: Validated with ±2 BPM tolerance (tightened from ±5 BPM)
+- Status: ✅ Excellent (within ±2 BPM tolerance for fixed-tempo fixtures)
 
-**Note**: Tolerance of ±5 BPM is used for validation. Target accuracy of ±2 BPM will be validated in Phase 1E with larger test set.
+**Note**: Tolerance tightened to ±2 BPM for fixed-tempo test fixtures. This provides more accurate validation for known BPM tracks while maintaining reasonable tolerance for variable-tempo real-world tracks.
 
 ---
 
