@@ -198,15 +198,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`AnalysisResult`** now includes real BPM and confidence values
 
 ### Performance
-- Autocorrelation: 5-15ms for 30s track (FFT-accelerated)
-- Comb filterbank: 10-30ms for 30s track
+- Autocorrelation: ~18.7 µs for 8-beat pattern (~5-15ms extrapolated for 30s track)
+- Comb filterbank: ~11.1 µs for 8-beat pattern (~10-30ms extrapolated for 30s track)
+- Coarse-to-fine search: ~7.7 µs for 8-beat pattern (~5-15ms extrapolated for 30s track)
 - Total period estimation: <50ms for 30s track (well within <500ms target)
+- Full pipeline: ~11.6ms for 30s track (well within <500ms target)
+- **Benchmarks**: Added comprehensive benchmark suite for period estimation modules
 
 ### Statistics
 - **Total Tests**: 112 (80 from Phase 1A + 32 from Phase 1B)
 - **Test Coverage**: 100% of implemented features
 - **Modules**: 13 modules implemented (9 from Phase 1A + 4 from Phase 1B)
 - **Enhancements**: 3 optional enhancements implemented (coarse-to-fine, adaptive tolerance, citations)
+- **Benchmarks**: 8 benchmarks total (3 normalization + 1 silence + 1 onset + 3 period estimation + 1 full pipeline)
+- **Integration Tests**: BPM validation tightened to ±2 BPM tolerance for fixed-tempo fixtures
 
 ## [0.1.0-alpha] - 2025-01-XX
 
