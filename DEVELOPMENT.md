@@ -179,12 +179,21 @@ Four independent methods with consensus voting:
 - Find peaks in ACF
 - Convert lag → BPM: `BPM = (60 * sample_rate) / (lag * hop_size)`
 - Filter within [min_bpm, max_bpm] range
+- **Reference**: Ellis & Pikrakis (2006)
 
 #### Comb Filterbank
-- For each candidate BPM (80-180, step=0.5 BPM)
+- For each candidate BPM (80-180, configurable resolution)
 - Compute expected beat interval
-- Score by counting onsets within ±10% timing tolerance
-- Normalize score by onset count
+- Score by counting onsets within adaptive tolerance window
+  - Adaptive tolerance: `tolerance = base_tolerance * (120.0 / bpm)`, clamped to [5%, 15%]
+  - Higher BPM = smaller tolerance (more precise)
+  - Lower BPM = larger tolerance (more forgiving)
+- Normalize score by beat count
+- **Reference**: Gkiokas et al. (2012)
+- **Optimization**: Coarse-to-fine search available (`coarse_to_fine_search()`)
+  - Stage 1: 2.0 BPM resolution (coarse)
+  - Stage 2: 0.5 BPM resolution around best candidate (fine)
+  - Reduces computation time by ~50%
 
 #### Candidate Filtering
 - Merge autocorrelation + comb results
