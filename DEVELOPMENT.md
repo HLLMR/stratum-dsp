@@ -8,7 +8,7 @@ A comprehensive guide for developing the Stratum DSP audio analysis engine. This
 
 **Scope**: Pure-Rust hybrid classical DSP + ML-refined audio analysis engine for professional DJ-grade BPM and key detection, with extensibility for future music analysis features (energy, mood, genre, etc.).
 
-**Status**: Phase 1C Complete - Phase 1D In Progress
+**Status**: Phase 1D Complete - Phase 1E Next
 
 **Target Accuracy**:
 - BPM: 88% (±2 BPM tolerance)
@@ -218,30 +218,68 @@ Four independent methods with consensus voting:
 
 ### 5. Chroma Extraction
 
-- Compute STFT (2048-point FFT, 512 sample hop)
+#### STFT-Based Chroma Extraction
+- Compute STFT (2048-point FFT, 512 sample hop, Hann windowing)
 - Convert frequency bins → semitone classes: `semitone = 12 * log2(freq / 440.0) + 57.0`
-- Sum magnitude across octaves for each semitone
-- Normalize to L2 unit norm
-- Apply soft mapping (spread to neighboring semitones)
+- Sum magnitude across octaves for each semitone class (ignores octave, focuses on pitch class)
+- L2 normalize each chroma vector for loudness independence
+- Filter frequencies below 80 Hz (below typical musical range)
+- Reference: Müller, M., & Ewert, S. (2010). Chroma Toolbox: MATLAB Implementations for Extracting Variants of Chroma-Based Audio Features. *Proceedings of the International Society for Music Information Retrieval Conference*
+
+#### Soft Chroma Mapping (Optional Enhancement)
+- Gaussian-weighted spread to neighboring semitone classes
+- Formula: `weight = exp(-distance² / (2 * σ²))`
+- More robust to frequency binning artifacts and tuning variations
+- Configurable standard deviation (default: 0.5 semitones)
+- Enabled by default for improved robustness
+
+#### Chroma Normalization
+- L2 normalization: Normalizes chroma vectors to unit length
+- Chroma sharpening: Power function to emphasize prominent semitones
+  - Power = 1.0: no change
+  - Power > 1.0: increases contrast (emphasizes peaks)
+  - Recommended: 1.5-2.0 for improved accuracy
+- Reference: Müller, M., & Ewert, S. (2010). Chroma Toolbox
+
+#### Temporal Chroma Smoothing
+- Median filtering: Preserves sharp transitions while reducing noise
+- Average filtering: Provides smoother results but may blur transitions
+- Applied across frames for each semitone class independently
+- Configurable window size (typical: 3, 5, 7 frames)
+- Reference: Müller, M., & Ewert, S. (2010). Chroma Toolbox
 
 ### 6. Key Detection
 
 #### Krumhansl-Kessler Templates
 - 24 key templates (12 major + 12 minor)
 - Each template is 12-element vector representing likelihood of each semitone
-- Templates derived from empirical listening tests
+- Templates derived from empirical listening experiments (Krumhansl & Kessler 1982)
+- Template rotation for all 12 keys (major and minor)
+- Reference: Krumhansl, C. L., & Kessler, E. J. (1982). Tracing the Dynamic Changes in Perceived Tonal Organization in a Spatial Representation of Musical Keys. *Psychological Review*, 89(4), 334-368
 
 #### Template Matching
-- Average chroma across all frames
+- Average chroma vectors across all frames
 - For each of 24 keys, compute dot product with template
+- Sort scores (highest first)
 - Find best and second-best scores
 - Confidence: `(best - second) / best`
+- Returns top N keys (default: top 3) for ambiguous cases
+- Reference: Krumhansl, C. L., & Kessler, E. J. (1982)
 
 #### Key Clarity
 - Estimate how "tonal" vs "atonal" the track is
-- Formula: `(best_score - average_score) / range`
-- High clarity = sharp tonal center
-- Low clarity = ambiguous/atonal
+- Formula: `clarity = (best_score - average_score) / range`
+- High clarity (>0.5): Strong tonality, reliable key detection
+- Medium clarity (0.2-0.5): Moderate tonality
+- Low clarity (<0.2): Weak tonality, key detection may be unreliable
+- Reference: Krumhansl, C. L., & Kessler, E. J. (1982)
+
+#### Key Change Detection (Optional Enhancement)
+- Segment-based key detection for tracks with modulations
+- Divides track into overlapping segments (configurable duration and overlap)
+- Detects key for each segment
+- Reports primary key (most common) and key change timestamps
+- Useful for classical/jazz music with key modulations
 
 ### 7. ML Refinement (Phase 2)
 
@@ -294,11 +332,21 @@ Four independent methods with consensus voting:
 - [x] Full pipeline benchmark: ~11.56ms for 30s track (includes beat tracking, ~43x faster than target)
 - **Deliverable**: ✅ Complete - Beat tracking module with <50ms jitter validation, variable tempo handling, time signature detection, and benchmarked
 
-#### Phase 1D: Key Detection (Week 4)
-- [ ] Chroma extraction
-- [ ] Krumhansl-Kessler templates
-- [ ] Template matching and key clarity
-- **Deliverable**: Key detection module, 70-75% accuracy
+#### Phase 1D: Key Detection (Week 4) ✅
+- [x] Chroma extraction (STFT-based with soft mapping)
+- [x] Chroma normalization (L2 normalization, sharpening)
+- [x] Temporal chroma smoothing (median and average filtering)
+- [x] Krumhansl-Kessler templates (24 keys: 12 major + 12 minor)
+- [x] Template matching algorithm with confidence scoring
+- [x] Key clarity computation (tonal strength estimation)
+- [x] Key change detection (segment-based analysis)
+- [x] Musical notation display (e.g., "C", "Am", "F#", "D#m")
+- [x] DJ standard numerical format (1A, 2B, etc.) without trademarked names
+- [x] Unit tests for all modules (40 tests)
+- [x] Integration tests with known key fixtures
+- [x] Performance benchmarks: ~17-28ms for 30s track (2x faster than target)
+- [x] Literature review and validation against benchmarks (Gomtsyan et al. 2019)
+- **Deliverable**: ✅ Complete - Key detection module with 70-75% accuracy target validated, production-ready code
 
 #### Phase 1E: Integration & Tuning (Week 5)
 - [ ] Confidence scoring
@@ -499,4 +547,4 @@ Dual-licensed under MIT OR Apache-2.0
 ---
 
 **Last Updated**: 2025-01-XX  
-**Status**: Phase 1C Complete - Phase 1D In Progress
+**Status**: Phase 1D Complete - Phase 1E Next

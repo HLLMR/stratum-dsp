@@ -197,27 +197,91 @@ pub fn analyze_audio(
         }, 0.0)
     };
     
-    // Phase 1D: Key Detection (not yet implemented)
-    // TODO: Key detection (Phase 1D)
+    // Phase 1D: Key Detection
+    let (key, key_confidence, key_clarity) = if trimmed_samples.len() >= config.frame_size {
+        // Extract chroma vectors with configurable options
+        use features::chroma::extractor::extract_chroma_with_options;
+        use features::chroma::normalization::sharpen_chroma;
+        use features::chroma::smoothing::smooth_chroma;
+        use features::key::{detect_key, compute_key_clarity, KeyTemplates};
+        
+        match extract_chroma_with_options(
+            &trimmed_samples,
+            sample_rate,
+            config.frame_size,
+            config.hop_size,
+            config.soft_chroma_mapping,
+            config.soft_mapping_sigma,
+        ) {
+            Ok(mut chroma_vectors) => {
+                // Apply chroma sharpening if enabled (power > 1.0)
+                if config.chroma_sharpening_power > 1.0 {
+                    for chroma in &mut chroma_vectors {
+                        *chroma = sharpen_chroma(chroma, config.chroma_sharpening_power);
+                    }
+                    log::debug!("Applied chroma sharpening with power {:.2}", config.chroma_sharpening_power);
+                }
+                
+                // Apply temporal smoothing (optional but recommended)
+                if chroma_vectors.len() > 5 {
+                    chroma_vectors = smooth_chroma(&chroma_vectors, 5);
+                }
+                
+                // Detect key using Krumhansl-Kessler templates
+                let templates = KeyTemplates::new();
+                match detect_key(&chroma_vectors, &templates) {
+                    Ok(key_result) => {
+                        // Compute key clarity
+                        let clarity = compute_key_clarity(&key_result.all_scores);
+                        
+                        log::debug!("Detected key: {:?}, confidence: {:.3}, clarity: {:.3}",
+                                   key_result.key, key_result.confidence, clarity);
+                        
+                        (key_result.key, key_result.confidence, clarity)
+                    }
+                    Err(e) => {
+                        log::warn!("Key detection failed: {}, using default", e);
+                        (Key::Major(0), 0.0, 0.0)
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Chroma extraction failed: {}, using default key", e);
+                (Key::Major(0), 0.0, 0.0)
+            }
+        }
+    } else {
+        log::debug!("Skipping key detection: insufficient samples (need at least {} samples)",
+                   config.frame_size);
+        (Key::Major(0), 0.0, 0.0)
+    };
     
     let processing_time_ms = start_time.elapsed().as_secs_f32() * 1000.0;
     
     // Build confidence warnings
     let mut confidence_warnings = Vec::new();
+    let mut flags = Vec::new();
+    
     if bpm == 0.0 {
         confidence_warnings.push("BPM detection failed: insufficient onsets or estimation error".to_string());
     }
     if grid_stability < 0.5 {
         confidence_warnings.push(format!("Low beat grid stability: {:.2} (may indicate tempo variation)", grid_stability));
     }
-    confidence_warnings.push("Key detection not yet implemented (Phase 1D)".to_string());
+    if key_confidence < 0.3 {
+        confidence_warnings.push(format!("Low key detection confidence: {:.2} (may indicate ambiguous or atonal music)", key_confidence));
+    }
+    if key_clarity < 0.2 {
+        confidence_warnings.push(format!("Low key clarity: {:.2} (track may be atonal or have weak tonality)", key_clarity));
+        flags.push(crate::analysis::result::AnalysisFlag::WeakTonality);
+    }
     
-    // Return result with Phase 1B BPM estimation and Phase 1C beat tracking
+    // Return result with Phase 1B BPM estimation, Phase 1C beat tracking, and Phase 1D key detection
     Ok(AnalysisResult {
         bpm,
         bpm_confidence,
-        key: Key::Major(0), // TODO: Phase 1D (C major placeholder)
-        key_confidence: 0.0,
+        key,
+        key_confidence,
         beat_grid,
         grid_stability,
         metadata: AnalysisMetadata {
@@ -226,8 +290,8 @@ pub fn analyze_audio(
             processing_time_ms,
             algorithm_version: "0.1.0-alpha".to_string(),
             onset_method_consensus: if energy_onsets.is_empty() { 0.0 } else { 1.0 },
-            methods_used: vec!["energy_flux".to_string()],
-            flags: vec![],
+            methods_used: vec!["energy_flux".to_string(), "chroma_extraction".to_string(), "key_detection".to_string()],
+            flags,
             confidence_warnings,
         },
     })
