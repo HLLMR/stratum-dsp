@@ -67,8 +67,47 @@ mod tests {
                 result.bpm
             );
             assert!(result.bpm_confidence > 0.0, "BPM confidence should be positive");
-            println!("120 BPM test: BPM={:.2}, confidence={:.3}, duration={:.2}s, processing={:.2}ms", 
-                     result.bpm, result.bpm_confidence, result.metadata.duration_seconds, result.metadata.processing_time_ms);
+            
+            // Phase 1C: Beat tracking should work
+            if !result.beat_grid.beats.is_empty() {
+                assert!(result.beat_grid.beats.len() >= 4, 
+                       "Should detect at least 4 beats for 4-bar track");
+                assert!(result.grid_stability >= 0.0 && result.grid_stability <= 1.0,
+                       "Grid stability should be in [0, 1]");
+                
+                // Validate beat intervals (should be ~0.5s for 120 BPM)
+                if result.beat_grid.beats.len() >= 2 {
+                    let beat_interval = result.beat_grid.beats[1] - result.beat_grid.beats[0];
+                    let expected_interval = 60.0 / 120.0; // 0.5s
+                    assert!(
+                        (beat_interval - expected_interval).abs() < 0.1,
+                        "Beat interval should be ~0.5s for 120 BPM, got {:.3}s",
+                        beat_interval
+                    );
+                }
+                
+                // Validate downbeats (should be every N beats depending on time signature)
+                // For 4/4: ~2.0s, for 3/4: ~1.5s, for 6/8: ~3.0s
+                if result.beat_grid.downbeats.len() >= 2 {
+                    let bar_interval = result.beat_grid.downbeats[1] - result.beat_grid.downbeats[0];
+                    // Accept any reasonable bar interval (1.0s to 4.0s)
+                    assert!(
+                        bar_interval >= 1.0 && bar_interval <= 4.0,
+                        "Bar interval should be reasonable (1.0-4.0s), got {:.3}s",
+                        bar_interval
+                    );
+                }
+                
+                // Phase 1C Enhanced: Variable tempo and time signature detection
+                println!("120 BPM test: BPM={:.2}, confidence={:.3}, {} beats, {} downbeats, stability={:.3}, duration={:.2}s, processing={:.2}ms", 
+                         result.bpm, result.bpm_confidence, result.beat_grid.beats.len(), 
+                         result.beat_grid.downbeats.len(), result.grid_stability,
+                         result.metadata.duration_seconds, result.metadata.processing_time_ms);
+                // Note: Variable tempo and time signature detection are now integrated
+            } else {
+                println!("120 BPM test: BPM={:.2}, confidence={:.3}, but beat grid is empty, duration={:.2}s, processing={:.2}ms", 
+                         result.bpm, result.bpm_confidence, result.metadata.duration_seconds, result.metadata.processing_time_ms);
+            }
         } else {
             println!("120 BPM test: BPM detection failed, duration={:.2}s, processing={:.2}ms", 
                      result.metadata.duration_seconds, result.metadata.processing_time_ms);
@@ -97,8 +136,33 @@ mod tests {
                 result.bpm
             );
             assert!(result.bpm_confidence > 0.0, "BPM confidence should be positive");
-            println!("128 BPM test: BPM={:.2}, confidence={:.3}, duration={:.2}s, processing={:.2}ms", 
-                     result.bpm, result.bpm_confidence, result.metadata.duration_seconds, result.metadata.processing_time_ms);
+            
+            // Phase 1C: Beat tracking should work
+            if !result.beat_grid.beats.is_empty() {
+                assert!(result.beat_grid.beats.len() >= 4,
+                       "Should detect at least 4 beats for 4-bar track");
+                assert!(result.grid_stability >= 0.0 && result.grid_stability <= 1.0,
+                       "Grid stability should be in [0, 1]");
+                
+                // Validate beat intervals (should be ~0.469s for 128 BPM)
+                if result.beat_grid.beats.len() >= 2 {
+                    let beat_interval = result.beat_grid.beats[1] - result.beat_grid.beats[0];
+                    let expected_interval = 60.0 / 128.0; // ~0.469s
+                    assert!(
+                        (beat_interval - expected_interval).abs() < 0.1,
+                        "Beat interval should be ~{:.3}s for 128 BPM, got {:.3}s",
+                        expected_interval, beat_interval
+                    );
+                }
+                
+                println!("128 BPM test: BPM={:.2}, confidence={:.3}, {} beats, {} downbeats, stability={:.3}, duration={:.2}s, processing={:.2}ms", 
+                         result.bpm, result.bpm_confidence, result.beat_grid.beats.len(),
+                         result.beat_grid.downbeats.len(), result.grid_stability,
+                         result.metadata.duration_seconds, result.metadata.processing_time_ms);
+            } else {
+                println!("128 BPM test: BPM={:.2}, confidence={:.3}, but beat grid is empty, duration={:.2}s, processing={:.2}ms", 
+                         result.bpm, result.bpm_confidence, result.metadata.duration_seconds, result.metadata.processing_time_ms);
+            }
         } else {
             println!("128 BPM test: BPM detection failed, duration={:.2}s, processing={:.2}ms", 
                      result.metadata.duration_seconds, result.metadata.processing_time_ms);

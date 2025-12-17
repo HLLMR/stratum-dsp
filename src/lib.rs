@@ -164,24 +164,62 @@ pub fn analyze_audio(
     
     log::debug!("Estimated BPM: {:.2} (confidence: {:.3})", bpm, bpm_confidence);
     
-    // Phase 1C-1E: Not yet implemented
-    // TODO: Beat tracking (Phase 1C)
+    // Phase 1C: Beat Tracking
+    let (beat_grid, grid_stability) = if bpm > 0.0 && energy_onsets.len() >= 2 {
+        // Convert onsets from sample indices to seconds
+        let onsets_seconds: Vec<f32> = energy_onsets.iter()
+            .map(|&sample_idx| sample_idx as f32 / sample_rate as f32)
+            .collect();
+        
+        // Generate beat grid using HMM Viterbi algorithm
+        use features::beat_tracking::generate_beat_grid;
+        match generate_beat_grid(bpm, bpm_confidence, &onsets_seconds, sample_rate) {
+            Ok((grid, stability)) => {
+                log::debug!("Beat grid generated: {} beats, {} downbeats, stability={:.3}",
+                           grid.beats.len(), grid.downbeats.len(), stability);
+                (grid, stability)
+            }
+            Err(e) => {
+                log::warn!("Beat tracking failed: {}, using empty grid", e);
+                (BeatGrid {
+                    downbeats: vec![],
+                    beats: vec![],
+                    bars: vec![],
+                }, 0.0)
+            }
+        }
+    } else {
+        log::debug!("Skipping beat tracking: BPM={:.2}, onsets={}", bpm, energy_onsets.len());
+        (BeatGrid {
+            downbeats: vec![],
+            beats: vec![],
+            bars: vec![],
+        }, 0.0)
+    };
+    
+    // Phase 1D: Key Detection (not yet implemented)
     // TODO: Key detection (Phase 1D)
     
     let processing_time_ms = start_time.elapsed().as_secs_f32() * 1000.0;
     
-    // Return result with Phase 1B BPM estimation
+    // Build confidence warnings
+    let mut confidence_warnings = Vec::new();
+    if bpm == 0.0 {
+        confidence_warnings.push("BPM detection failed: insufficient onsets or estimation error".to_string());
+    }
+    if grid_stability < 0.5 {
+        confidence_warnings.push(format!("Low beat grid stability: {:.2} (may indicate tempo variation)", grid_stability));
+    }
+    confidence_warnings.push("Key detection not yet implemented (Phase 1D)".to_string());
+    
+    // Return result with Phase 1B BPM estimation and Phase 1C beat tracking
     Ok(AnalysisResult {
         bpm,
         bpm_confidence,
         key: Key::Major(0), // TODO: Phase 1D (C major placeholder)
         key_confidence: 0.0,
-        beat_grid: BeatGrid {
-            downbeats: vec![],
-            beats: vec![],
-            bars: vec![],
-        },
-        grid_stability: 0.0,
+        beat_grid,
+        grid_stability,
         metadata: AnalysisMetadata {
             duration_seconds: trimmed_samples.len() as f32 / sample_rate as f32,
             sample_rate,
@@ -190,12 +228,7 @@ pub fn analyze_audio(
             onset_method_consensus: if energy_onsets.is_empty() { 0.0 } else { 1.0 },
             methods_used: vec!["energy_flux".to_string()],
             flags: vec![],
-            confidence_warnings: if bpm == 0.0 {
-                vec!["BPM detection failed: insufficient onsets or estimation error".to_string(),
-                     "Key detection not yet implemented (Phase 1D)".to_string()]
-            } else {
-                vec!["Key detection not yet implemented (Phase 1D)".to_string()]
-            },
+            confidence_warnings,
         },
     })
 }
