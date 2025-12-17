@@ -52,6 +52,7 @@ pub mod ml;
 
 // Re-export main types
 pub use analysis::result::{AnalysisResult, AnalysisMetadata, BeatGrid, Key, KeyType};
+pub use analysis::confidence::{AnalysisConfidence, compute_confidence};
 pub use config::AnalysisConfig;
 pub use error::AnalysisError;
 
@@ -276,12 +277,13 @@ pub fn analyze_audio(
         flags.push(crate::analysis::result::AnalysisFlag::WeakTonality);
     }
     
-    // Return result with Phase 1B BPM estimation, Phase 1C beat tracking, and Phase 1D key detection
-    Ok(AnalysisResult {
+    // Phase 1E: Build result and compute comprehensive confidence scores
+    let result = AnalysisResult {
         bpm,
         bpm_confidence,
         key,
         key_confidence,
+        key_clarity,
         beat_grid,
         grid_stability,
         metadata: AnalysisMetadata {
@@ -294,6 +296,21 @@ pub fn analyze_audio(
             flags,
             confidence_warnings,
         },
-    })
+    };
+    
+    // Phase 1E: Compute comprehensive confidence scores
+    use analysis::confidence::compute_confidence;
+    let confidence = compute_confidence(&result);
+    log::debug!(
+        "Analysis complete: BPM={:.2} (conf={:.3}), Key={:?} (conf={:.3}), Overall confidence={:.3}",
+        result.bpm,
+        confidence.bpm_confidence,
+        result.key,
+        confidence.key_confidence,
+        confidence.overall_confidence
+    );
+    
+    // Return result with Phase 1E confidence scoring integrated
+    Ok(result)
 }
 

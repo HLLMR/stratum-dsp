@@ -177,6 +177,14 @@ pub struct AnalysisResult {
     /// Key confidence (0.0-1.0)
     pub key_confidence: f32,
     
+    /// Key clarity (0.0-1.0)
+    /// 
+    /// Measures how "tonal" vs "atonal" the track is:
+    /// - High (>0.5): Strong tonality, reliable key detection
+    /// - Medium (0.2-0.5): Moderate tonality
+    /// - Low (<0.2): Weak tonality, key detection may be unreliable
+    pub key_clarity: f32,
+    
     /// Beat grid
     pub beat_grid: BeatGrid,
     
