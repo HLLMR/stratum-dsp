@@ -39,7 +39,10 @@
 use super::BpmCandidate;
 
 const EPSILON: f32 = 1e-10;
-const DEFAULT_TOLERANCE: f32 = 0.1; // 10% of beat interval
+const DEFAULT_TOLERANCE: f32 = 0.1; // 10% of beat interval (base)
+const MIN_TOLERANCE: f32 = 0.05; // 5% minimum
+const MAX_TOLERANCE: f32 = 0.15; // 15% maximum
+const REFERENCE_BPM: f32 = 120.0; // Reference BPM for adaptive tolerance
 
 /// Estimate BPM from comb filterbank
 ///
@@ -154,7 +157,15 @@ pub fn estimate_bpm_from_comb_filter(
     // Test each candidate BPM
     let mut bpm = min_bpm;
     while bpm <= max_bpm + EPSILON {
-        let score = score_bpm_candidate(&sorted_onsets, sample_rate, bpm, DEFAULT_TOLERANCE)?;
+        // Adaptive tolerance: higher BPM = smaller tolerance (more precise)
+        // Lower BPM = larger tolerance (more forgiving)
+        // Formula: tolerance = base_tolerance * (reference_bpm / bpm)
+        // Clamped to [MIN_TOLERANCE, MAX_TOLERANCE]
+        let adaptive_tolerance = (DEFAULT_TOLERANCE * (REFERENCE_BPM / bpm))
+            .max(MIN_TOLERANCE)
+            .min(MAX_TOLERANCE);
+        
+        let score = score_bpm_candidate(&sorted_onsets, sample_rate, bpm, adaptive_tolerance)?;
         
         if score > max_score {
             max_score = score;
@@ -323,11 +334,12 @@ pub fn coarse_to_fine_search(
 /// * `onsets` - Sorted onset times in samples
 /// * `sample_rate` - Sample rate in Hz
 /// * `bpm` - Candidate BPM to test
-/// * `tolerance` - Tolerance as fraction of beat interval (default: 0.1 = 10%)
+/// * `tolerance` - Tolerance as fraction of beat interval (e.g., 0.1 = 10%)
+///   This is typically adaptive based on BPM (higher BPM = smaller tolerance)
 ///
 /// # Returns
 ///
-/// Normalized score (0.0-1.0): fraction of onsets aligned with expected beats
+/// Normalized score (0.0-1.0): fraction of expected beats that have aligned onsets
 fn score_bpm_candidate(
     onsets: &[usize],
     sample_rate: u32,

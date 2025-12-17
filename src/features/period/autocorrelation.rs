@@ -252,12 +252,19 @@ fn compute_autocorrelation_fft(signal: &[f32]) -> Result<Vec<f32>, crate::error:
     let ifft = planner.plan_fft_inverse(fft_size);
     ifft.process(&mut fft_input);
 
-    // Extract real part and normalize
+    // Extract real part and normalize by FFT size
     let scale = 1.0 / (fft_size as f32);
     let acf: Vec<f32> = fft_input[..n]
         .iter()
         .map(|x| (x.re * scale).max(0.0)) // Autocorrelation is non-negative
         .collect();
+
+    // Note: Ellis & Pikrakis (2006) mentions optional normalization by signal length
+    // (ACF[lag] = ACF[lag] / (n - lag)) for better consistency across signal lengths.
+    // However, this normalization can affect peak detection by favoring shorter lags,
+    // potentially causing octave errors. Since normalization is optional and the current
+    // unnormalized approach works well, we keep it unnormalized for peak detection accuracy.
+    // If normalization is needed for specific use cases, it can be added as an optional parameter.
 
     Ok(acf)
 }
