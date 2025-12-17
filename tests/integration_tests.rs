@@ -60,10 +60,11 @@ mod tests {
         assert_eq!(result.metadata.sample_rate, sample_rate);
         
         // Phase 1B: BPM detection should work
+        // For fixed-tempo test fixtures, we can use tighter tolerance (±2 BPM)
         if result.bpm > 0.0 {
             assert!(
-                (result.bpm - 120.0).abs() < 5.0,
-                "BPM should be close to 120, got {:.2}",
+                (result.bpm - 120.0).abs() < 2.0,
+                "BPM should be close to 120 (±2 BPM tolerance), got {:.2}",
                 result.bpm
             );
             assert!(result.bpm_confidence > 0.0, "BPM confidence should be positive");
@@ -129,10 +130,11 @@ mod tests {
         assert!(result.metadata.processing_time_ms > 0.0);
         
         // Phase 1B: BPM detection should work
+        // For fixed-tempo test fixtures, we can use tighter tolerance (±2 BPM)
         if result.bpm > 0.0 {
             assert!(
-                (result.bpm - 128.0).abs() < 5.0,
-                "BPM should be close to 128, got {:.2}",
+                (result.bpm - 128.0).abs() < 2.0,
+                "BPM should be close to 128 (±2 BPM tolerance), got {:.2}",
                 result.bpm
             );
             assert!(result.bpm_confidence > 0.0, "BPM confidence should be positive");
