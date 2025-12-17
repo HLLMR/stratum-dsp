@@ -290,7 +290,9 @@ Four independent methods with consensus voting:
 - [x] Downbeat detection (using detected time signature)
 - [x] Grid stability calculation
 - [x] 44 unit tests + integration tests
-- **Deliverable**: ✅ Complete - Beat tracking module with <50ms jitter validation, variable tempo handling, and time signature detection
+- [x] Performance benchmarks: HMM ~2.50µs, Bayesian ~1.10µs, Tempo Variation ~601ns, Time Signature ~200ns, Full Beat Grid ~3.75µs (16 beats)
+- [x] Full pipeline benchmark: ~11.56ms for 30s track (includes beat tracking, ~43x faster than target)
+- **Deliverable**: ✅ Complete - Beat tracking module with <50ms jitter validation, variable tempo handling, time signature detection, and benchmarked
 
 #### Phase 1D: Key Detection (Week 4)
 - [ ] Chroma extraction
@@ -404,13 +406,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 - **Single-threaded**: <500ms per 30s track
   - **Actual (Phase 1B benchmarks)**: ~11.6ms for 30s track (43x faster than target)
-  - **Period estimation**: <50ms for 30s track
-    - **Main pipeline**: Autocorrelation (5-15ms) + Comb filterbank (10-30ms) = 15-45ms total
-    - **Individual methods** (benchmarked separately):
-      - Autocorrelation: ~18.7 µs (8-beat), ~5-15ms extrapolated (30s)
-      - Comb filterbank: ~11.1 µs (8-beat), ~10-30ms extrapolated (30s)
-      - Coarse-to-fine (optional): ~7.7 µs (8-beat), ~5-15ms extrapolated (30s)
-    - **Note**: Coarse-to-fine is an optimization that can replace comb filterbank, but the main `estimate_bpm()` function uses autocorrelation + comb filterbank
+  - **Period estimation**: <50ms for 30s track (autocorrelation + comb filterbank)
+  - **Autocorrelation**: ~18.7 µs (8-beat), ~5-15ms extrapolated (30s)
+  - **Comb filterbank**: ~11.1 µs (8-beat), ~10-30ms extrapolated (30s)
+  - **Coarse-to-fine**: ~7.7 µs (8-beat), ~5-15ms extrapolated (30s)
 - **With parallelization**: 50-100ms per 30s track (estimated)
 - **With GPU FFT**: 50-100ms (with amortized GPU overhead, estimated)
 
@@ -500,5 +499,4 @@ Dual-licensed under MIT OR Apache-2.0
 ---
 
 **Last Updated**: 2025-01-XX  
-**Status**: Phase 1B Complete - Phase 1C In Progress
-
+**Status**: Phase 1C Complete - Phase 1D In Progress

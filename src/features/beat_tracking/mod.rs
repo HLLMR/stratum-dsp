@@ -47,7 +47,7 @@ pub mod time_signature;
 
 use crate::analysis::result::BeatGrid;
 use crate::error::AnalysisError;
-use tempo_variation::{detect_tempo_variations, has_tempo_variation, TempoSegment};
+use tempo_variation::{detect_tempo_variations, has_tempo_variation};
 use time_signature::{detect_time_signature, TimeSignature};
 
 /// Beat position in a bar
@@ -239,6 +239,7 @@ pub fn generate_beat_grid(
 /// # Returns
 ///
 /// `BeatGrid` structure with beats, downbeats, and bars
+#[allow(dead_code)] // Used in tests
 fn generate_beat_grid_from_positions(
     beat_positions: &[BeatPosition],
     bpm_estimate: f32,
@@ -312,6 +313,7 @@ fn generate_beat_grid_from_positions_with_time_sig(
 /// # Returns
 ///
 /// Vector of downbeat times (beat 1 of each bar)
+#[allow(dead_code)] // Used in tests
 fn detect_downbeats(beats: &[f32], bpm_estimate: f32) -> Result<Vec<f32>, AnalysisError> {
     detect_downbeats_with_time_sig(beats, bpm_estimate, TimeSignature::FourFour)
 }

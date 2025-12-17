@@ -234,7 +234,7 @@ mod tests {
             time += beat_interval;
         }
         
-        let (time_sig, confidence) = detect_time_signature(&beats, 120.0).unwrap();
+        let (_time_sig, confidence) = detect_time_signature(&beats, 120.0).unwrap();
         
         // May detect 3/4 or default to 4/4 depending on pattern
         assert!(confidence >= 0.0 && confidence <= 1.0);
