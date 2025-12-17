@@ -82,9 +82,12 @@
   - [x] Detailed literature citations in function documentation
 
 - [x] **Performance Benchmarks**
-  - [x] Autocorrelation: ~18.7 µs (8-beat pattern), ~5-15ms extrapolated (30s track)
-  - [x] Comb filterbank: ~11.1 µs (8-beat pattern), ~10-30ms extrapolated (30s track)
-  - [x] Coarse-to-fine: ~7.7 µs (8-beat pattern), ~5-15ms extrapolated (30s track)
+  - [x] Period estimation total: 15-45ms for 30s track (autocorrelation + comb filterbank)
+    - Autocorrelation: ~18.7 µs (8-beat pattern), ~5-15ms extrapolated (30s track)
+    - Comb filterbank: ~11.1 µs (8-beat pattern), ~10-30ms extrapolated (30s track)
+    - Combined: 15-45ms total (<50ms target ✓)
+  - [x] Coarse-to-fine (optional optimization): ~7.7 µs (8-beat pattern), ~5-15ms extrapolated (30s track)
+    - Can replace comb filterbank for 10-30ms total when used
   - [x] Full pipeline: ~11.6ms for 30s track (43x faster than 500ms target)
   - [x] All methods exceed performance targets
   - [x] Comprehensive benchmark suite (`benches/audio_analysis_bench.rs`)

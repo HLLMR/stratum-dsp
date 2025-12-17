@@ -105,9 +105,16 @@ This document presents benchmark results for Phase 1B period estimation modules.
 | Comb Filterbank | ~11.1 µs | ~10-30ms | <50ms | ✅ Excellent |
 | Coarse-to-Fine | ~7.7 µs | ~5-15ms | <50ms | ✅ Excellent |
 
+**Main Pipeline** (`estimate_bpm()` function):
+- **Combined**: Autocorrelation (5-15ms) + Comb Filterbank (10-30ms) = **15-45ms total**
+- **Target**: <50ms for 30s track
+- **Status**: ✅ **Meets target** (15-45ms < 50ms)
+
 **Key Observations**:
 - All methods are extremely fast (microseconds for 8-beat pattern)
-- Coarse-to-fine is fastest (~31% faster than comb filterbank)
+- Main pipeline combines autocorrelation + comb filterbank (15-45ms total)
+- Coarse-to-fine is an optional optimization that can replace comb filterbank
+- When using coarse-to-fine instead: Autocorrelation (5-15ms) + Coarse-to-Fine (5-15ms) = 10-30ms total
 - All methods well within performance targets
 - Performance scales well with track length
 
@@ -157,7 +164,7 @@ This document presents benchmark results for Phase 1B period estimation modules.
 |--------|--------|--------|
 | Autocorrelation <30ms (30s) | ~5-15ms | ✅ 2-6x faster |
 | Comb Filterbank <50ms (30s) | ~10-30ms | ✅ 1.7-5x faster |
-| Total Period Estimation <50ms | <50ms | ✅ Meets target |
+| Total Period Estimation <50ms | 15-45ms (autocorr + comb) | ✅ Meets target (15-45ms < 50ms) |
 | Full Pipeline <500ms | ~11.6ms | ✅ 43x faster |
 
 **All performance targets exceeded.**

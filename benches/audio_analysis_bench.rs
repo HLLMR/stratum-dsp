@@ -6,6 +6,9 @@ use stratum_dsp::preprocessing::silence::{detect_and_trim, SilenceDetector};
 use stratum_dsp::features::onset::energy_flux::detect_energy_flux_onsets;
 use stratum_dsp::features::period::autocorrelation::estimate_bpm_from_autocorrelation;
 use stratum_dsp::features::period::comb_filter::{estimate_bpm_from_comb_filter, coarse_to_fine_search};
+use stratum_dsp::features::beat_tracking::hmm::HmmBeatTracker;
+use stratum_dsp::features::beat_tracking::bayesian::BayesianBeatTracker;
+use stratum_dsp::features::beat_tracking::{generate_beat_grid, tempo_variation, time_signature};
 use stratum_dsp::{analyze_audio, AnalysisConfig};
 
 /// Generate synthetic test audio (sine wave)
@@ -148,6 +151,78 @@ fn period_estimation_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+fn beat_tracking_benchmarks(c: &mut Criterion) {
+    // Generate synthetic onsets for 120 BPM at 44.1kHz
+    let sample_rate = 44100;
+    let bpm = 120.0;
+    let beat_interval = 60.0 / bpm; // 0.5 seconds
+    
+    // Generate 16 beats worth of onsets (8 seconds, 2 bars)
+    let mut onsets_seconds = Vec::new();
+    for beat in 0..16 {
+        onsets_seconds.push(beat as f32 * beat_interval);
+    }
+    
+    let mut group = c.benchmark_group("beat_tracking");
+    
+    // HMM Viterbi beat tracking
+    group.bench_function("hmm_viterbi_16beats", |b| {
+        b.iter(|| {
+            let tracker = HmmBeatTracker::new(
+                black_box(bpm),
+                black_box(onsets_seconds.clone()),
+                black_box(sample_rate),
+            );
+            let _ = tracker.track_beats();
+        });
+    });
+    
+    // Bayesian tempo tracking (single update)
+    group.bench_function("bayesian_update_16beats", |b| {
+        b.iter(|| {
+            let mut tracker = BayesianBeatTracker::new(black_box(bpm), black_box(0.8));
+            let _ = tracker.update_with_onsets(
+                black_box(&onsets_seconds),
+                black_box(sample_rate),
+            );
+        });
+    });
+    
+    // Tempo variation detection
+    group.bench_function("tempo_variation_detection_16beats", |b| {
+        b.iter(|| {
+            let _ = tempo_variation::detect_tempo_variations(
+                black_box(&onsets_seconds),
+                black_box(bpm),
+            );
+        });
+    });
+    
+    // Time signature detection
+    group.bench_function("time_signature_detection_16beats", |b| {
+        b.iter(|| {
+            let _ = time_signature::detect_time_signature(
+                black_box(&onsets_seconds),
+                black_box(bpm),
+            );
+        });
+    });
+    
+    // Full beat grid generation (includes all steps)
+    group.bench_function("generate_beat_grid_16beats", |b| {
+        b.iter(|| {
+            let _ = generate_beat_grid(
+                black_box(bpm),
+                black_box(0.85),
+                black_box(&onsets_seconds),
+                black_box(sample_rate),
+            );
+        });
+    });
+    
+    group.finish();
+}
+
 fn full_analysis_benchmark(c: &mut Criterion) {
     let samples = generate_test_audio(44100 * 30); // 30 seconds
     let config = AnalysisConfig::default();
@@ -165,6 +240,7 @@ criterion_group!(
     silence_detection_benchmarks,
     onset_detection_benchmarks,
     period_estimation_benchmarks,
+    beat_tracking_benchmarks,
     full_analysis_benchmark
 );
 criterion_main!(benches);

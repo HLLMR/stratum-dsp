@@ -404,10 +404,13 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 - **Single-threaded**: <500ms per 30s track
   - **Actual (Phase 1B benchmarks)**: ~11.6ms for 30s track (43x faster than target)
-  - **Period estimation**: <50ms for 30s track (autocorrelation + comb filterbank)
-  - **Autocorrelation**: ~18.7 µs (8-beat), ~5-15ms extrapolated (30s)
-  - **Comb filterbank**: ~11.1 µs (8-beat), ~10-30ms extrapolated (30s)
-  - **Coarse-to-fine**: ~7.7 µs (8-beat), ~5-15ms extrapolated (30s)
+  - **Period estimation**: <50ms for 30s track
+    - **Main pipeline**: Autocorrelation (5-15ms) + Comb filterbank (10-30ms) = 15-45ms total
+    - **Individual methods** (benchmarked separately):
+      - Autocorrelation: ~18.7 µs (8-beat), ~5-15ms extrapolated (30s)
+      - Comb filterbank: ~11.1 µs (8-beat), ~10-30ms extrapolated (30s)
+      - Coarse-to-fine (optional): ~7.7 µs (8-beat), ~5-15ms extrapolated (30s)
+    - **Note**: Coarse-to-fine is an optimization that can replace comb filterbank, but the main `estimate_bpm()` function uses autocorrelation + comb filterbank
 - **With parallelization**: 50-100ms per 30s track (estimated)
 - **With GPU FFT**: 50-100ms (with amortized GPU overhead, estimated)
 
