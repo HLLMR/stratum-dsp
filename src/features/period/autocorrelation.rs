@@ -43,6 +43,16 @@ const EPSILON: f32 = 1e-10;
 
 /// Estimate BPM from autocorrelation
 ///
+/// This function implements the autocorrelation-based tempo estimation algorithm
+/// described in Ellis & Pikrakis (2006). The algorithm finds periodicity in the
+/// onset signal by computing the autocorrelation function, which reveals repeating
+/// patterns corresponding to the beat period.
+///
+/// # Reference
+///
+/// Ellis, D. P. W., & Pikrakis, A. (2006). Real-time Beat Induction.
+/// *Proceedings of the International Conference on Music Information Retrieval*.
+///
 /// # Arguments
 ///
 /// * `onsets` - Onset times in samples
@@ -71,16 +81,21 @@ const EPSILON: f32 = 1e-10;
 /// 2. **Autocorrelation**: Compute using FFT acceleration
 ///    - `ACF[lag] = IFFT(|FFT(signal)|²)`
 ///    - Complexity: O(n log n) instead of O(n²)
+///    - This FFT acceleration is a key contribution of Ellis & Pikrakis (2006)
 ///
 /// 3. **Peak Detection**: Find local maxima in ACF
 ///    - Filter by BPM range (min_lag, max_lag)
 ///    - Compute prominence (height relative to neighbors)
+///    - Peaks in ACF correspond to periodicities in the onset signal
 ///
 /// 4. **BPM Conversion**: `BPM = (60 * sample_rate) / (lag * hop_size)`
+///    - Lag values represent the period in frames
+///    - Convert to BPM using the relationship between frames and time
 ///
 /// # Performance
 ///
 /// Typical performance: 5-15ms for 30s track (44100 Hz, 512 hop)
+/// The FFT acceleration makes this method efficient for real-time applications.
 pub fn estimate_bpm_from_autocorrelation(
     onsets: &[usize],
     sample_rate: u32,

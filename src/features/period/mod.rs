@@ -23,7 +23,7 @@ pub mod comb_filter;
 pub mod peak_picking;
 
 pub use autocorrelation::estimate_bpm_from_autocorrelation;
-pub use comb_filter::estimate_bpm_from_comb_filter;
+pub use comb_filter::{estimate_bpm_from_comb_filter, coarse_to_fine_search};
 pub use candidate_filter::merge_bpm_candidates;
 pub use peak_picking::find_peaks;
 
