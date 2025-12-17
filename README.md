@@ -12,13 +12,14 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 ## Status
 
 ✅ **Phase 1A Complete** - Preprocessing & Onset Detection implemented and tested  
-🚧 **Phase 1B In Progress** - Period Estimation (BPM Detection)
+✅ **Phase 1B Complete** - Period Estimation (BPM Detection) implemented and tested  
+🚧 **Phase 1C Next** - Beat Tracking (HMM Viterbi)
 
 Target accuracy:
 - BPM: 88% (±2 BPM tolerance)
 - Key: 77% (exact match)
 
-**Current Progress**: 12.5% (1/8 weeks)
+**Current Progress**: 25% (2/8 weeks)
 
 ## Quick Start
 
@@ -73,7 +74,12 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
   - [x] Onset detection (energy flux, spectral flux, HFC, HPSS)
   - [x] Consensus voting algorithm
   - [x] 80 tests (75 unit + 5 integration)
-- [ ] **Phase 1B**: Period Estimation (BPM Detection)
+- [x] **Phase 1B**: Period Estimation (BPM Detection) ✅
+  - [x] Autocorrelation-based BPM estimation (FFT-accelerated)
+  - [x] Comb filterbank BPM estimation
+  - [x] Peak picking and candidate filtering
+  - [x] Octave error handling
+  - [x] 29 unit tests + integration tests
 - [ ] **Phase 1C**: Beat Tracking (HMM)
 - [ ] **Phase 1D**: Key Detection (chroma + templates)
 - [ ] **Phase 1E**: Integration and tuning

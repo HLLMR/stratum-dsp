@@ -31,8 +31,8 @@
 //!
 //! The analysis pipeline follows this flow:
 //!
-//! ```
-//! Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinement → Output
+//! ```text
+//! Audio Input -> Preprocessing -> Feature Extraction -> Analysis -> ML Refinement -> Output
 //! ```
 //!
 //! See the [module documentation](https://docs.rs/stratum-dsp) for details.
@@ -140,18 +140,40 @@ pub fn analyze_audio(
     
     log::debug!("Detected {} onsets using energy flux", energy_onsets.len());
     
-    // Phase 1B-1E: Not yet implemented
-    // TODO: Period estimation (Phase 1B)
+    // Phase 1B: Period Estimation (BPM Detection)
+    use features::period::estimate_bpm;
+    let bpm_estimate = if energy_onsets.len() >= 2 {
+        estimate_bpm(
+            &energy_onsets,
+            sample_rate,
+            config.hop_size,
+            config.min_bpm,
+            config.max_bpm,
+            config.bpm_resolution,
+        )?
+    } else {
+        None
+    };
+    
+    let (bpm, bpm_confidence) = if let Some(estimate) = bpm_estimate {
+        (estimate.bpm, estimate.confidence)
+    } else {
+        log::warn!("Could not estimate BPM: insufficient onsets or estimation failed");
+        (0.0, 0.0)
+    };
+    
+    log::debug!("Estimated BPM: {:.2} (confidence: {:.3})", bpm, bpm_confidence);
+    
+    // Phase 1C-1E: Not yet implemented
     // TODO: Beat tracking (Phase 1C)
     // TODO: Key detection (Phase 1D)
     
     let processing_time_ms = start_time.elapsed().as_secs_f32() * 1000.0;
     
-    // Return result with placeholder values for unimplemented features
-    // This allows the API to work while we build out the rest
+    // Return result with Phase 1B BPM estimation
     Ok(AnalysisResult {
-        bpm: 0.0, // TODO: Phase 1B
-        bpm_confidence: 0.0,
+        bpm,
+        bpm_confidence,
         key: Key::Major(0), // TODO: Phase 1D (C major placeholder)
         key_confidence: 0.0,
         beat_grid: BeatGrid {
@@ -168,8 +190,12 @@ pub fn analyze_audio(
             onset_method_consensus: if energy_onsets.is_empty() { 0.0 } else { 1.0 },
             methods_used: vec!["energy_flux".to_string()],
             flags: vec![],
-            confidence_warnings: vec!["BPM detection not yet implemented (Phase 1B)".to_string(),
-                                       "Key detection not yet implemented (Phase 1D)".to_string()],
+            confidence_warnings: if bpm == 0.0 {
+                vec!["BPM detection failed: insufficient onsets or estimation error".to_string(),
+                     "Key detection not yet implemented (Phase 1D)".to_string()]
+            } else {
+                vec!["Key detection not yet implemented (Phase 1D)".to_string()]
+            },
         },
     })
 }
