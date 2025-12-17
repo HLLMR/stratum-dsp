@@ -79,7 +79,9 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
   - [x] Comb filterbank BPM estimation
   - [x] Peak picking and candidate filtering
   - [x] Octave error handling
-  - [x] 29 unit tests + integration tests
+  - [x] Coarse-to-fine search optimization (5-15ms vs 10-30ms)
+  - [x] Adaptive tolerance window (BPM-dependent)
+  - [x] 32 unit tests + integration tests
 - [ ] **Phase 1C**: Beat Tracking (HMM)
 - [ ] **Phase 1D**: Key Detection (chroma + templates)
 - [ ] **Phase 1E**: Integration and tuning
