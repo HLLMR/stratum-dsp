@@ -92,6 +92,15 @@ Quickly bucket pred/gt ratios to spot octave/harmonic confusions:
 python analyze_ratio_buckets.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
 ```
 
+### 7. Generate an Exemplar Report (diagnostic deep-dive)
+
+This produces a “surgical” report of the worst failures, per-tempo-band breakdowns, and
+head-to-head cases where TAG is within ±2 BPM and Stratum is not (and vice versa):
+
+```bash
+python analyze_exemplars.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv --top 20
+```
+
 ## Directory Structure
 
 ```
