@@ -29,37 +29,18 @@ impl KeyTemplates {
     ///
     /// `KeyTemplates` with all 24 key profiles initialized
     pub fn new() -> Self {
-        // C Major template
-        // Values from Krumhansl & Kessler (1982)
+        // Canonical Krumhansl-Kessler tonal profiles (1982), in [C, C#, D, ..., B] order.
+        // Source values are commonly published in this form:
+        //   - Major: C major profile
+        //   - Minor: C minor profile
+        //
+        // We rotate these base profiles to generate all keys.
         let c_major = vec![
-            0.15, // C
-            0.01, // C#
-            0.12, // D
-            0.01, // D#
-            0.13, // E
-            0.11, // F
-            0.01, // F#
-            0.13, // G
-            0.01, // G#
-            0.12, // A
-            0.01, // A#
-            0.10, // B
+            6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
         ];
-        
-        // A Minor template (relative minor of C major)
-        let a_minor = vec![
-            0.12, // A
-            0.01, // A#
-            0.10, // B
-            0.12, // C
-            0.01, // C#
-            0.11, // D
-            0.01, // D#
-            0.12, // E
-            0.13, // F
-            0.01, // F#
-            0.10, // G
-            0.01, // G#
+
+        let c_minor = vec![
+            6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
         ];
         
         // Generate all 12 major keys by rotating C major
@@ -102,14 +83,26 @@ impl KeyTemplates {
                 major[key_idx][semitone_idx] = c_major[(semitone_idx + 12 - key_idx) % 12];
             }
             
-            // Minor keys: rotate A minor template
-            // A minor template has A at index 0, but we want it at key_idx (where key_idx=9 for A)
-            // To get A at key_idx, we need to rotate the template by key_idx positions
-            // So we take element at (semitone_idx - key_idx + 12) % 12 from the original template
+            // Minor keys: rotate C-minor base profile (tonic at index 0) the same way we rotate major.
             for semitone_idx in 0..12 {
                 let source_idx = (semitone_idx + 12 - key_idx) % 12;
-                minor[key_idx][semitone_idx] = a_minor[source_idx];
+                minor[key_idx][semitone_idx] = c_minor[source_idx];
             }
+        }
+
+        // L2-normalize each template so dot-products behave like cosine similarity against L2-normalized chroma.
+        fn l2_normalize(v: &mut [f32]) {
+            let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+            if norm > 1e-12 {
+                for x in v.iter_mut() {
+                    *x /= norm;
+                }
+            }
+        }
+
+        for k in 0..12 {
+            l2_normalize(&mut major[k]);
+            l2_normalize(&mut minor[k]);
         }
         
         Self { major, minor }
@@ -185,14 +178,28 @@ mod tests {
         let templates = KeyTemplates::new();
         let c_major = templates.get_major_template(0);
         
-        // C major should have high values for C, E, G (tonic, major third, perfect fifth)
-        assert!(c_major[0] > 0.1); // C (tonic)
-        assert!(c_major[4] > 0.1); // E (major third)
-        assert!(c_major[7] > 0.1); // G (perfect fifth)
-        
-        // Non-scale tones should have low values
-        assert!(c_major[1] < 0.05); // C#
-        assert!(c_major[3] < 0.05); // D#
+        // C major should strongly emphasize C, E, G (tonic, major third, perfect fifth).
+        // With canonical K-K profiles (L2-normalized), absolute values are not tiny, so we test *relative* structure.
+        let tonic = c_major[0];
+        let third = c_major[4];
+        let fifth = c_major[7];
+
+        // Tonic should be the maximum (or tied within float epsilon).
+        let max = c_major.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!((tonic - max).abs() < 1e-6);
+
+        // Third and fifth should be among the strongest components.
+        let mut sorted = c_major.to_vec();
+        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        let top4_threshold = sorted[3];
+        assert!(third >= top4_threshold);
+        assert!(fifth >= top4_threshold);
+
+        // Strong preference over chromatic tones (e.g., C#, D#, F#, G#, A#)
+        let chromatic_avg = (c_major[1] + c_major[3] + c_major[6] + c_major[8] + c_major[10]) / 5.0;
+        assert!(tonic > chromatic_avg * 1.4);
+        assert!(third > chromatic_avg * 1.1);
+        assert!(fifth > chromatic_avg * 1.2);
     }
     
     #[test]
