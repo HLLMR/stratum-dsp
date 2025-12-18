@@ -1,0 +1,557 @@
+//! Novelty curve extraction for tempogram analysis
+//!
+//! Extracts novelty curves from magnitude spectrograms using multiple complementary methods:
+//! - Spectral flux: Detects spectral changes (harmonic onsets)
+//! - Energy flux: Detects energy changes (percussive onsets)
+//! - High-frequency content (HFC): Detects high-frequency attacks
+//!
+//! These curves are combined with weighted voting to create a robust novelty curve
+//! for tempogram-based BPM detection.
+//!
+//! # Reference
+//!
+//! Grosche, P., Müller, M., & Serrà, J. (2012). Robust Local Features for Remote Folk Music Identification.
+//! *IEEE Transactions on Audio, Speech, and Language Processing*.
+//!
+//! Klapuri, A., Eronen, A., & Astola, J. (2006). Analysis of the Meter of Audio Signals.
+//! *IEEE Transactions on Audio, Speech, and Language Processing*, 14(1), 342-355.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use stratum_dsp::features::period::novelty::{spectral_flux_novelty, energy_flux_novelty, hfc_novelty, combined_novelty};
+//!
+//! // magnitude_spec_frames is a spectrogram: Vec<Vec<f32>> where each inner Vec is a frame
+//! let magnitude_spec_frames = vec![vec![0.0f32; 1024]; 100];
+//!
+//! let spectral = spectral_flux_novelty(&magnitude_spec_frames)?;
+//! let energy = energy_flux_novelty(&magnitude_spec_frames)?;
+//! let hfc = hfc_novelty(&magnitude_spec_frames, 44100)?;
+//! let combined = combined_novelty(&spectral, &energy, &hfc);
+//! # Ok::<(), stratum_dsp::AnalysisError>(())
+//! ```
+
+use crate::error::AnalysisError;
+
+/// Numerical stability epsilon
+const EPSILON: f32 = 1e-10;
+
+/// Extract spectral flux novelty curve from magnitude spectrogram
+///
+/// Computes frame-to-frame spectral changes, emphasizing positive differences
+/// (onsets) over negative differences (decays). This method is particularly
+/// effective for detecting harmonic onsets and spectral changes.
+///
+/// # Reference
+///
+/// Grosche, P., Müller, M., & Serrà, J. (2012). Robust Local Features for Remote Folk Music Identification.
+/// *IEEE Transactions on Audio, Speech, and Language Processing*.
+///
+/// Klapuri, A., Eronen, A., & Astola, J. (2006). Analysis of the Meter of Audio Signals.
+/// *IEEE Transactions on Audio, Speech, and Language Processing*, 14(1), 342-355.
+///
+/// # Arguments
+///
+/// * `magnitude_spec_frames` - FFT magnitude spectrogram (n_frames × n_bins)
+///   Each inner `Vec<f32>` represents one frame's magnitude spectrum
+///
+/// # Returns
+///
+/// Novelty curve as `Vec<f32>` with length `n_frames - 1` (one value per frame transition)
+/// Values are normalized to [0, 1] range
+///
+/// # Errors
+///
+/// Returns `AnalysisError` if:
+/// - Spectrogram is empty
+/// - Frames have inconsistent lengths
+/// - Less than 2 frames (need at least 2 to compute flux)
+pub fn spectral_flux_novelty(
+    magnitude_spec_frames: &[Vec<f32>],
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    if magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+    
+    // Check that all frames have the same length
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!("Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                        n_bins, i, frame.len())
+            ));
+        }
+    }
+    
+    log::debug!("Computing spectral flux novelty: {} frames, {} bins per frame",
+                magnitude_spec_frames.len(), n_bins);
+    
+    // Step 1: Normalize magnitude to [0, 1] per frame
+    let mut normalized: Vec<Vec<f32>> = Vec::with_capacity(magnitude_spec_frames.len());
+    
+    for frame in magnitude_spec_frames {
+        let max_mag = frame.iter().copied().fold(0.0f32, f32::max);
+        
+        if max_mag > EPSILON {
+            let normalized_frame: Vec<f32> = frame.iter()
+                .map(|&x| x / max_mag)
+                .collect();
+            normalized.push(normalized_frame);
+        } else {
+            normalized.push(vec![0.0f32; n_bins]);
+        }
+    }
+    
+    // Step 2: Compute L2 distance between consecutive frames (only positive differences)
+    let mut flux = Vec::with_capacity(normalized.len().saturating_sub(1));
+    
+    for i in 1..normalized.len() {
+        let prev_frame = &normalized[i - 1];
+        let curr_frame = &normalized[i];
+        
+        // Compute L2 distance with half-wave rectification (only positive differences)
+        let sum_sq_diff: f32 = prev_frame.iter()
+            .zip(curr_frame.iter())
+            .map(|(&prev, &curr)| {
+                let diff = curr - prev;
+                // Only count positive differences (increases in magnitude = onsets)
+                diff.max(0.0)
+            })
+            .map(|x| x * x)
+            .sum();
+        
+        let l2_distance = sum_sq_diff.sqrt();
+        flux.push(l2_distance);
+    }
+    
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    // Step 3: Normalize to [0, 1]
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for val in &mut flux {
+            *val /= max_flux;
+        }
+    }
+    
+    log::debug!("Spectral flux novelty: {} values, max={:.6}",
+                flux.len(), max_flux);
+    
+    Ok(flux)
+}
+
+/// Extract energy flux novelty curve from magnitude spectrogram
+///
+/// Computes frame-to-frame energy changes by summing magnitude across all
+/// frequency bins. This method is particularly effective for detecting
+/// percussive onsets and energy-based changes.
+///
+/// # Reference
+///
+/// Bello, J. P., Daudet, L., Abdallah, S., Duxbury, C., Davies, M., & Sandler, M. B. (2005).
+/// A Tutorial on Onset Detection in Music Signals.
+/// *IEEE Transactions on Speech and Audio Processing*, 13(5), 1035-1047.
+///
+/// # Arguments
+///
+/// * `magnitude_spec_frames` - FFT magnitude spectrogram (n_frames × n_bins)
+///
+/// # Returns
+///
+/// Novelty curve as `Vec<f32>` with length `n_frames - 1` (one value per frame transition)
+/// Values are normalized to [0, 1] range
+pub fn energy_flux_novelty(
+    magnitude_spec_frames: &[Vec<f32>],
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    if magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+    
+    // Check that all frames have the same length
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!("Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                        n_bins, i, frame.len())
+            ));
+        }
+    }
+    
+    log::debug!("Computing energy flux novelty: {} frames, {} bins per frame",
+                magnitude_spec_frames.len(), n_bins);
+    
+    // Compute energy per frame (sum of squared magnitudes)
+    let energies: Vec<f32> = magnitude_spec_frames.iter()
+        .map(|frame| frame.iter().map(|&x| x * x).sum())
+        .collect();
+    
+    // Compute energy flux (positive differences only)
+    let mut flux = Vec::with_capacity(energies.len().saturating_sub(1));
+    
+    for i in 1..energies.len() {
+        let diff = energies[i] - energies[i - 1];
+        // Only positive differences (energy increases = onsets)
+        flux.push(diff.max(0.0));
+    }
+    
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    // Normalize to [0, 1]
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for val in &mut flux {
+            *val /= max_flux;
+        }
+    }
+    
+    log::debug!("Energy flux novelty: {} values, max={:.6}",
+                flux.len(), max_flux);
+    
+    Ok(flux)
+}
+
+/// Extract high-frequency content (HFC) novelty curve from magnitude spectrogram
+///
+/// Computes weighted sum emphasizing high frequencies, making this method
+/// particularly effective for detecting percussive attacks and sharp transients.
+///
+/// # Reference
+///
+/// Bello, J. P., Daudet, L., Abdallah, S., Duxbury, C., Davies, M., & Sandler, M. B. (2005).
+/// A Tutorial on Onset Detection in Music Signals.
+/// *IEEE Transactions on Speech and Audio Processing*, 13(5), 1035-1047.
+///
+/// # Arguments
+///
+/// * `magnitude_spec_frames` - FFT magnitude spectrogram (n_frames × n_bins)
+/// * `sample_rate` - Sample rate in Hz (used for frequency bin calculation)
+///
+/// # Returns
+///
+/// Novelty curve as `Vec<f32>` with length `n_frames - 1` (one value per frame transition)
+/// Values are normalized to [0, 1] range
+pub fn hfc_novelty(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    if sample_rate == 0 {
+        return Err(AnalysisError::InvalidInput("Sample rate must be > 0".to_string()));
+    }
+    
+    if magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+    
+    // Check that all frames have the same length
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!("Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                        n_bins, i, frame.len())
+            ));
+        }
+    }
+    
+    log::debug!("Computing HFC novelty: {} frames, {} bins per frame, sample_rate={}",
+                magnitude_spec_frames.len(), n_bins, sample_rate);
+    
+    // Compute HFC per frame: sum over k (k * |X[k]|^2)
+    // where k is the frequency bin index (higher bins = higher frequencies)
+    let hfc_values: Vec<f32> = magnitude_spec_frames.iter()
+        .map(|frame| {
+            frame.iter()
+                .enumerate()
+                .map(|(k, &mag)| (k as f32) * mag * mag)
+                .sum()
+        })
+        .collect();
+    
+    // Compute HFC flux (positive differences only)
+    let mut flux = Vec::with_capacity(hfc_values.len().saturating_sub(1));
+    
+    for i in 1..hfc_values.len() {
+        let diff = hfc_values[i] - hfc_values[i - 1];
+        // Only positive differences (HFC increases = high-frequency onsets)
+        flux.push(diff.max(0.0));
+    }
+    
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    // Normalize to [0, 1]
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for val in &mut flux {
+            *val /= max_flux;
+        }
+    }
+    
+    log::debug!("HFC novelty: {} values, max={:.6}",
+                flux.len(), max_flux);
+    
+    Ok(flux)
+}
+
+/// Combine multiple novelty curves with weighted voting
+///
+/// Combines spectral flux, energy flux, and HFC novelty curves into a single
+/// robust novelty curve. Each method captures different aspects of onsets:
+/// - Spectral flux: Harmonic changes
+/// - Energy flux: Energy changes
+/// - HFC: High-frequency attacks
+///
+/// Consensus voting makes the combined curve more reliable than any single method.
+///
+/// # Arguments
+///
+/// * `spectral` - Spectral flux novelty curve
+/// * `energy` - Energy flux novelty curve
+/// * `hfc` - HFC novelty curve
+///
+/// # Returns
+///
+/// Combined novelty curve as `Vec<f32>`, normalized to [0, 1] range
+/// Length matches the shortest input curve
+///
+/// # Weights
+///
+/// Default weights (can be adjusted based on empirical performance):
+/// - Spectral flux: 0.5 (most important for BPM detection per Klapuri et al. 2006)
+/// - Energy flux: 0.3
+/// - HFC: 0.2
+pub fn combined_novelty(
+    spectral: &[f32],
+    energy: &[f32],
+    hfc: &[f32],
+) -> Vec<f32> {
+    // Find minimum length (all curves should be same length, but be safe)
+    let min_len = spectral.len().min(energy.len()).min(hfc.len());
+    
+    if min_len == 0 {
+        return Vec::new();
+    }
+    
+    // Weights: spectral flux is most important for BPM detection (per Klapuri et al. 2006)
+    const WEIGHT_SPECTRAL: f32 = 0.5;
+    const WEIGHT_ENERGY: f32 = 0.3;
+    const WEIGHT_HFC: f32 = 0.2;
+    const WEIGHT_SUM: f32 = WEIGHT_SPECTRAL + WEIGHT_ENERGY + WEIGHT_HFC;
+    
+    let mut combined = Vec::with_capacity(min_len);
+    
+    for i in 0..min_len {
+        let spectral_val = spectral.get(i).copied().unwrap_or(0.0);
+        let energy_val = energy.get(i).copied().unwrap_or(0.0);
+        let hfc_val = hfc.get(i).copied().unwrap_or(0.0);
+        
+        // Weighted average
+        let weighted_sum = (spectral_val * WEIGHT_SPECTRAL +
+                           energy_val * WEIGHT_ENERGY +
+                           hfc_val * WEIGHT_HFC) / WEIGHT_SUM;
+        
+        combined.push(weighted_sum);
+    }
+    
+    // Normalize to [0, 1] (should already be normalized, but ensure it)
+    normalize_in_place(&mut combined);
+
+    // Standard novelty conditioning (helps reduce metrical-level ambiguity):
+    // 1) subtract a local mean (high-pass in time)
+    // 2) half-wave rectify
+    // 3) optional smoothing
+    //
+    // This is a common practical step in tempo estimation pipelines that work with novelty functions.
+    // It suppresses slow drift and helps de-emphasize dense subdivisions vs beat-level periodicity.
+    combined = local_mean_subtract(&combined, 16);
+    smooth_moving_average_in_place(&mut combined, 5);
+    normalize_in_place(&mut combined);
+
+    log::debug!("Combined novelty (conditioned): {} values",
+                combined.len());
+
+    combined
+}
+
+/// Normalize a curve in-place to [0, 1] by dividing by its maximum.
+fn normalize_in_place(curve: &mut [f32]) {
+    let max_val = curve.iter().copied().fold(0.0f32, f32::max);
+    if max_val > EPSILON {
+        for v in curve {
+            *v /= max_val;
+        }
+    }
+}
+
+/// Subtract a moving-average local mean and half-wave rectify.
+///
+/// Output: `max(0, x[i] - local_mean[i])`.
+fn local_mean_subtract(x: &[f32], window: usize) -> Vec<f32> {
+    if x.is_empty() || window == 0 {
+        return x.to_vec();
+    }
+    let w = window.max(1);
+    let half = w / 2;
+    let mut out = vec![0.0f32; x.len()];
+
+    for i in 0..x.len() {
+        let start = i.saturating_sub(half);
+        let end = (i + half + 1).min(x.len());
+        let mut sum = 0.0f32;
+        for v in &x[start..end] {
+            sum += *v;
+        }
+        let mean = sum / (end - start) as f32;
+        out[i] = (x[i] - mean).max(0.0);
+    }
+
+    out
+}
+
+/// Simple moving-average smoothing in-place.
+fn smooth_moving_average_in_place(x: &mut [f32], window: usize) {
+    if x.len() < 3 || window <= 1 {
+        return;
+    }
+    let w = window.max(1);
+    let half = w / 2;
+    let orig = x.to_vec();
+    for i in 0..x.len() {
+        let start = i.saturating_sub(half);
+        let end = (i + half + 1).min(x.len());
+        let mut sum = 0.0f32;
+        for v in &orig[start..end] {
+            sum += *v;
+        }
+        x[i] = sum / (end - start) as f32;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_spectral_flux_novelty_basic() {
+        // Create spectrogram with a spectral change
+        let mut spectrogram = vec![vec![0.1f32; 1024]; 10];
+        
+        // Frame 5: different spectral pattern
+        for bin in 0..512 {
+            spectrogram[5][bin] = 1.0f32;
+        }
+        
+        let novelty = spectral_flux_novelty(&spectrogram).unwrap();
+        
+        // Should have 9 values (10 frames - 1)
+        assert_eq!(novelty.len(), 9);
+        
+        // Should detect change around frame 5
+        assert!(novelty[4] > 0.0 || novelty[5] > 0.0);
+    }
+    
+    #[test]
+    fn test_spectral_flux_novelty_empty() {
+        let spectrogram = vec![];
+        let novelty = spectral_flux_novelty(&spectrogram).unwrap();
+        assert!(novelty.is_empty());
+    }
+    
+    #[test]
+    fn test_spectral_flux_novelty_single_frame() {
+        let spectrogram = vec![vec![0.5f32; 1024]];
+        let novelty = spectral_flux_novelty(&spectrogram).unwrap();
+        // Need at least 2 frames
+        assert!(novelty.is_empty());
+    }
+    
+    #[test]
+    fn test_energy_flux_novelty_basic() {
+        let mut spectrogram = vec![vec![0.1f32; 1024]; 10];
+        
+        // Frame 5: higher energy
+        for bin in 0..1024 {
+            spectrogram[5][bin] = 1.0f32;
+        }
+        
+        let novelty = energy_flux_novelty(&spectrogram).unwrap();
+        
+        assert_eq!(novelty.len(), 9);
+        // Should detect energy increase at frame 5
+        assert!(novelty[4] > 0.0 || novelty[5] > 0.0);
+    }
+    
+    #[test]
+    fn test_hfc_novelty_basic() {
+        let mut spectrogram = vec![vec![0.1f32; 1024]; 10];
+        
+        // Frame 5: high-frequency content
+        for bin in 512..1024 {
+            spectrogram[5][bin] = 1.0f32;
+        }
+        
+        let novelty = hfc_novelty(&spectrogram, 44100).unwrap();
+        
+        assert_eq!(novelty.len(), 9);
+        // Should detect HFC increase at frame 5
+        assert!(novelty[4] > 0.0 || novelty[5] > 0.0);
+    }
+    
+    #[test]
+    fn test_combined_novelty() {
+        let spectral = vec![0.0, 0.5, 1.0, 0.5, 0.0];
+        let energy = vec![0.0, 0.3, 0.8, 0.3, 0.0];
+        let hfc = vec![0.0, 0.2, 0.6, 0.2, 0.0];
+        
+        let combined = combined_novelty(&spectral, &energy, &hfc);
+        
+        assert_eq!(combined.len(), 5);
+        // Conditioning can reshape small synthetic examples; just validate normalization/range.
+        assert!(combined.iter().all(|&v| v >= 0.0 && v <= 1.0));
+        assert!(combined.iter().copied().fold(0.0f32, f32::max) > 0.0);
+    }
+    
+    #[test]
+    fn test_combined_novelty_different_lengths() {
+        let spectral = vec![0.0, 0.5, 1.0];
+        let energy = vec![0.0, 0.3, 0.8, 0.3];
+        let hfc = vec![0.0, 0.2];
+        
+        let combined = combined_novelty(&spectral, &energy, &hfc);
+        
+        // Should use minimum length (2)
+        assert_eq!(combined.len(), 2);
+    }
+}
+

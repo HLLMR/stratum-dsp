@@ -147,7 +147,7 @@ pub fn extract_chroma_with_options(
 ///
 /// Vector of magnitude spectra (one per frame)
 /// Each inner vector has `frame_size / 2 + 1` frequency bins
-fn compute_stft(
+pub fn compute_stft(
     samples: &[f32],
     frame_size: usize,
     hop_size: usize,

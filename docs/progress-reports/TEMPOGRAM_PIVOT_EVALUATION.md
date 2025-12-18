@@ -1,7 +1,7 @@
 # Tempogram-Based BPM Detection: Complete Remediation Plan
 
-**Date**: 2025-01-XX  
-**Status**: Documentation Complete - Ready for Implementation  
+**Date**: 2025-12-17  
+**Status**: Implemented - Tuning/Validation In Progress  
 **Purpose**: Complete technical specification for replacing broken BPM engine with proven tempogram algorithm
 
 ---
@@ -12,7 +12,9 @@
 
 **The Solution:** Fourier tempogram (Grosche et al. 2012) achieves 85-92% accuracy by analyzing the entire novelty curve as a unified global signal. This is the industry standard used by Spotify, AudioShake, MusicBrainz, and DJ software.
 
-**What We're Doing:** Complete replacement of `src/features/period/` with dual tempogram implementation (FFT + Autocorrelation). Both methods will be implemented and compared empirically for maximum accuracy. This is not an enhancement—it's a fundamental architectural change.
+**What We Did:** Implemented and integrated the dual tempogram approach (FFT + Autocorrelation) as the primary BPM estimator, with legacy retained for fallback/A-B testing. Empirical validation shows material improvement vs legacy but remains below target; tuning is ongoing.
+
+**Current baseline + run history:** see `docs/progress-reports/PHASE_1F_VALIDATION.md`.
 
 **Expected Improvement**:
 - Accuracy: 30% → 85-92% (±5 BPM tolerance)
@@ -24,7 +26,7 @@
 
 ## Current System Analysis
 
-### Current Implementation (Phase 1B) - BROKEN
+### Current Implementation (Phase 1B) - Deprecated (kept for fallback/A-B)
 
 **Architecture:**
 ```

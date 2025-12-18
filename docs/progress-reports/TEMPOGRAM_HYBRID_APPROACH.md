@@ -1,7 +1,7 @@
 # Hybrid Tempogram Approach: Future Enhancement
 
-**Date**: 2025-01-XX  
-**Status**: Documented for Future Implementation  
+**Date**: 2025-12-17  
+**Status**: Documented for Future Implementation (Not Recommended Until Phase 1F Validated)  
 **Purpose**: Hybrid approach combining FFT (fast, coarse) + Autocorrelation (precise, fine)
 
 ---
@@ -9,6 +9,12 @@
 ## Overview
 
 The hybrid approach combines the speed of FFT tempogram with the precision of autocorrelation tempogram. This is documented as a future enhancement to be implemented after empirical comparison of the two independent methods.
+
+### Status Update (Post-Implementation)
+
+- Phase 1F dual-method tempogram is implemented and integrated.
+- Early experimental “fusion” approaches (combining signals/models) were tested; naive selection degraded accuracy.
+- Recommendation remains: do not pursue hybrid/fusion optimizations until metrical-level selection and confidence calibration are robust.
 
 ## Algorithm
 

@@ -8,7 +8,7 @@ A comprehensive guide for developing the Stratum DSP audio analysis engine. This
 
 **Scope**: Pure-Rust hybrid classical DSP + ML-refined audio analysis engine for professional DJ-grade BPM and key detection, with extensibility for future music analysis features (energy, mood, genre, etc.).
 
-**Status**: Phase 1E Complete - Phase 2A Next (ML Refinement)
+**Status**: Phase 1F Implemented (Tempogram Pivot) - Tuning/Validation In Progress
 
 **Target Accuracy**:
 - BPM: 88% (±2 BPM tolerance)
@@ -173,7 +173,50 @@ Four independent methods with consensus voting:
 
 ### 3. Period Estimation
 
-**⚠️ CRITICAL PIVOT REQUIRED**: Current implementation (autocorrelation + comb filterbank) is fundamentally limited to ~30% accuracy due to frame-by-frame analysis. Complete replacement with Fourier tempogram (Grosche et al. 2012) is required. See `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for complete specification.
+**⚠️ CRITICAL PIVOT (PHASE 1F)**: The legacy implementation (autocorrelation + comb filterbank on onset lists) is fundamentally limited by metrical ambiguity and frame-by-frame assumptions. Phase 1F implements a tempogram-based approach (Grosche et al. 2012). Initial empirical validation indicates **tuning is required** (dominant error mode: tempo octave / metrical-level selection).
+
+**See**:
+- `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` (technical specification)
+- `docs/progress-reports/PHASE_1F_VALIDATION.md` (run history + baseline + failure modes)
+- `PIPELINE.md` (authoritative runtime flow + decision points)
+
+## FMA validation workflow (current)
+
+This is the canonical workflow used during Phase 1F tuning.
+
+Build:
+
+```bash
+cargo build --release --example analyze_file
+```
+
+Run the batch:
+
+```bash
+python validation/run_validation.py
+```
+
+Useful tuning/A-B flags:
+- `--no-preprocess`: disable normalization + silence trimming
+- `--no-onset-consensus`: use energy-flux-only onset list (legacy + beat tracking)
+- `--force-legacy-bpm`: run Phase 1B legacy BPM only
+- `--bpm-fusion`: enable BPM fusion (validator mode; does not override tempogram BPM)
+- Legacy guardrails (pass-through to `analyze_file`):
+  - `--legacy-preferred-min/--legacy-preferred-max`
+  - `--legacy-soft-min/--legacy-soft-max`
+  - `--legacy-mul-preferred/--legacy-mul-soft/--legacy-mul-extreme`
+
+Analyze results:
+
+```bash
+python validation/analyze_results.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
+```
+
+Analyze metrical-level ratio buckets:
+
+```bash
+python validation/analyze_ratio_buckets.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
+```
 
 #### Current Implementation (Phase 1B - TO BE REPLACED)
 
@@ -218,6 +261,56 @@ Four independent methods with consensus voting:
   - Compute autocorrelation at this lag: `autocorr_sum += novelty[i] * novelty[i + frames_per_beat]`
   - Normalize by count: `strength = autocorr_sum / count`
 - Find BPM with highest autocorrelation strength
+**Code Locations (Implemented)**:
+- `src/features/period/novelty.rs` (spectral flux, energy flux, HFC, combined novelty)
+- `src/features/period/tempogram_autocorr.rs` (autocorrelation tempogram)
+- `src/features/period/tempogram_fft.rs` (FFT tempogram)
+- `src/features/period/tempogram.rs` (comparison/selection entry point)
+- `src/features/period/multi_resolution.rs` (multi-resolution wrapper)
+- Integration:
+  - `src/features/period/mod.rs` exports new tempogram entry points while retaining legacy code for comparison/fallback
+  - `src/lib.rs` uses tempogram as primary BPM estimator (legacy fallback retained)
+
+---
+
+## Validation Workflow (FMA Small)
+
+The repository includes a validation harness under `validation/` for testing on FMA Small with Echonest tempo ground truth.
+
+### Setup (Once)
+
+Place the dataset at:
+
+```
+../validation-data/
+├── fma_small/
+└── fma_metadata/
+    ├── tracks.csv
+    └── echonest.csv
+```
+
+### Run a New Batch
+
+From repo root:
+
+1. Build the release example:
+   - `cargo build --release --example analyze_file`
+2. Prepare a batch (example: 30 tracks):
+   - `python validation/prepare_test_batch.py --num-tracks 30`
+3. Run validation:
+   - `python validation/run_validation.py`
+4. Summarize:
+   - `python validation/analyze_results.py`
+
+### Current Known Validation Outcome (as of 2025-12-17)
+
+On an initial 30-track batch, results are substantially below target:
+
+- BPM MAE: 57.55 BPM
+- BPM accuracy (±2 BPM): 16.7%
+
+Dominant failure mode: **tempo octave / metrical-level selection (~2× errors)**.
+
 - Confidence based on peak prominence
 - **Advantages**: Arbitrary BPM resolution, direct hypothesis testing
 - **Expected**: 75-85% accuracy, 20-40ms for 30s track

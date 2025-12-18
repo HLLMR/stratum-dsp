@@ -12,8 +12,74 @@ pub struct AnalysisConfig {
     
     /// Normalization method to use (default: Peak)
     pub normalization: NormalizationMethod,
+
+    /// Enable normalization step (default: true)
+    pub enable_normalization: bool,
+
+    /// Enable silence detection + trimming step (default: true)
+    pub enable_silence_trimming: bool,
+
+    // Onset detection (used by beat tracking and legacy BPM fallback)
+    /// Enable multi-detector onset consensus (spectral flux + HFC + optional HPSS) (default: true)
+    ///
+    /// Note: Tempogram BPM does not use this onset list, but legacy BPM + beat tracking do.
+    pub enable_onset_consensus: bool,
+
+    /// Threshold percentile for STFT-based onset detectors (spectral flux / HFC / HPSS) (default: 0.80)
+    /// Range: [0.0, 1.0]
+    pub onset_threshold_percentile: f32,
+
+    /// Onset clustering tolerance window in milliseconds for consensus voting (default: 50 ms)
+    pub onset_consensus_tolerance_ms: u32,
+
+    /// Consensus method weights [energy_flux, spectral_flux, hfc, hpss] (default: equal weights)
+    pub onset_consensus_weights: [f32; 4],
+
+    /// Enable HPSS-based onset detector inside consensus (default: false; more expensive)
+    pub enable_hpss_onsets: bool,
+
+    /// HPSS median-filter margin (default: 10). Typical values: 5–20.
+    pub hpss_margin: usize,
     
     // BPM detection
+    /// Force legacy BPM estimation (Phase 1B autocorrelation + comb filter) and skip tempogram.
+    /// Default: false.
+    ///
+    /// Intended for A/B validation and hybrid/consensus experimentation.
+    pub force_legacy_bpm: bool,
+
+    /// Enable BPM fusion (compute tempogram + legacy in parallel, then choose using consensus logic).
+    /// Default: false (tempogram-only unless it fails, then legacy fallback).
+    pub enable_bpm_fusion: bool,
+
+    /// Enable legacy BPM guardrails (soft confidence caps by tempo range).
+    /// Default: true.
+    pub enable_legacy_bpm_guardrails: bool,
+
+    /// Legacy guardrails: preferred BPM range (default: 75–150).
+    pub legacy_bpm_preferred_min: f32,
+    /// Legacy guardrails: preferred BPM range upper bound (default: 150).
+    pub legacy_bpm_preferred_max: f32,
+
+    /// Legacy guardrails: soft BPM range (default: 60–180).
+    /// Values in [soft_min, preferred_min) or (preferred_max, soft_max] get a medium cap.
+    pub legacy_bpm_soft_min: f32,
+    /// Legacy guardrails: soft BPM range upper bound (default: 180).
+    pub legacy_bpm_soft_max: f32,
+
+    /// Legacy guardrails: confidence caps by range.
+    /// - preferred: inside [preferred_min, preferred_max]
+    /// - soft: inside [soft_min, soft_max] but outside preferred
+    /// - extreme: outside [soft_min, soft_max]
+    ///
+    /// **Multiplier semantics**: these are applied as `confidence *= multiplier` to legacy
+    /// candidates/estimates (softly biasing the selection).
+    pub legacy_bpm_conf_mul_preferred: f32,
+    /// Legacy guardrails: confidence multiplier for the soft band (default: 0.50).
+    pub legacy_bpm_conf_mul_soft: f32,
+    /// Legacy guardrails: confidence multiplier for extremes (default: 0.10).
+    pub legacy_bpm_conf_mul_extreme: f32,
+
     /// Minimum BPM to consider (default: 60.0)
     pub min_bpm: f32,
     
@@ -57,8 +123,28 @@ impl Default for AnalysisConfig {
         Self {
             min_amplitude_db: -40.0,
             normalization: NormalizationMethod::Peak,
-            min_bpm: 60.0,
-            max_bpm: 180.0,
+            enable_normalization: true,
+            enable_silence_trimming: true,
+            enable_onset_consensus: true,
+            onset_threshold_percentile: 0.80,
+            onset_consensus_tolerance_ms: 50,
+            onset_consensus_weights: [0.25, 0.25, 0.25, 0.25],
+            enable_hpss_onsets: false,
+            hpss_margin: 10,
+            force_legacy_bpm: false,
+            enable_bpm_fusion: false,
+            enable_legacy_bpm_guardrails: true,
+            // Tuned defaults (empirical, small-batch): slightly wider preferred band and
+            // slightly less aggressive down-weighting while keeping a strong extreme penalty.
+            legacy_bpm_preferred_min: 72.0,
+            legacy_bpm_preferred_max: 168.0,
+            legacy_bpm_soft_min: 60.0,
+            legacy_bpm_soft_max: 210.0,
+            legacy_bpm_conf_mul_preferred: 1.30,
+            legacy_bpm_conf_mul_soft: 0.70,
+            legacy_bpm_conf_mul_extreme: 0.01,
+            min_bpm: 40.0,  // Lowered from 60.0 to catch slower tracks (ballads, ambient, etc.)
+            max_bpm: 240.0, // Raised from 180.0 to catch high-tempo tracks (drum & bass, etc.)
             bpm_resolution: 1.0,
             frame_size: 2048,
             hop_size: 512,

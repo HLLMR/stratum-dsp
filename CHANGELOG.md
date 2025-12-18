@@ -10,6 +10,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - ML refinement (Phase 2)
 
+### Added - Phase 1F: Tempogram BPM Pivot (Implemented, Tuning In Progress)
+
+#### Tempogram BPM Detection (New)
+- **Novelty curve extraction** (`src/features/period/novelty.rs`)
+  - Spectral flux, energy flux, and HFC novelty curves
+  - Weighted combined novelty curve for robust periodicity analysis
+- **Autocorrelation tempogram** (`src/features/period/tempogram_autocorr.rs`)
+  - Hypothesis testing over BPM range by scoring autocorrelation at tempo lags
+- **FFT tempogram** (`src/features/period/tempogram_fft.rs`)
+  - Frequency-domain periodicity analysis of the novelty curve with BPM mapping
+- **Tempogram selection entry point** (`src/features/period/tempogram.rs`)
+  - Runs both methods and selects/combines outputs
+  - Disagreement handling including harmonic relationship detection
+- **Multi-resolution wrapper** (`src/features/period/multi_resolution.rs`)
+  - Runs tempogram across multiple hop sizes and attempts agreement-based selection
+
+#### Integration
+- **Period module updated** (`src/features/period/mod.rs`)
+  - Exposes Phase 1F tempogram APIs
+  - Retains legacy Phase 1B APIs for comparison/fallback during transition
+- **Pipeline updated** (`src/lib.rs`)
+  - Uses tempogram as primary BPM estimator
+  - Falls back to legacy BPM estimation if tempogram fails
+- **A/B and tuning switches** (validation-focused)
+  - Preprocessing can be disabled (`enable_normalization`, `enable_silence_trimming`)
+  - Onset consensus can be disabled (`enable_onset_consensus`)
+  - Legacy-only BPM mode (`force_legacy_bpm`)
+  - BPM fusion validator mode (`enable_bpm_fusion`) that adjusts confidence without overriding BPM
+  - Legacy BPM guardrails (confidence multipliers by tempo range) with tunable defaults
+- **Shared STFT reuse**
+  - `compute_stft(...)` exposed in `src/features/chroma/extractor.rs` to support tempogram STFT magnitude generation
+
+#### Documentation
+- Added Phase 1F progress reports:
+  - `docs/progress-reports/PHASE_1F_COMPLETE.md`
+  - `docs/progress-reports/PHASE_1F_VALIDATION.md`
+  - `docs/progress-reports/PHASE_1F_LITERATURE_REVIEW.md`
+- Updated Phase 1F documentation status:
+  - `docs/progress-reports/PHASE_1F_DOCUMENTATION_COMPLETE.md`
+- Added authoritative pipeline doc:
+  - `PIPELINE.md`
+
+### Known Issues
+- **Phase 1F accuracy not yet meeting targets**:
+  - Initial FMA Small validation indicates poor BPM accuracy with dominant tempo-octave/metre-level selection errors.
+  - See `docs/progress-reports/PHASE_1F_VALIDATION.md`.
+- **BPM fusion chooser strategy rejected**:
+  - Early fusion experiments that attempted to select BPM from combined candidates degraded accuracy.
+  - Fusion remains available as a validator mode (confidence-only) for diagnostics.
+- **Legacy test failures**:
+  - 2 failing unit tests in `features::period::candidate_filter` (legacy module) currently prevent a fully green test run.
+
 ### Added - Phase 1E: Integration & Tuning
 
 #### Confidence Scoring System

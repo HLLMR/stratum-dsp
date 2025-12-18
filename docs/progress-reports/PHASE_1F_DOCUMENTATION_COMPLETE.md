@@ -1,45 +1,49 @@
-# Phase 1F: Tempogram Pivot - Documentation Complete
+# Phase 1F: Tempogram Pivot - Documentation Alignment (Post-Sprint)
 
-**Date**: 2025-01-XX  
-**Status**: ✅ All Documentation Complete and Aligned  
-**Ready for Implementation**: Yes
-
----
-
-## Summary of Changes
-
-All project documentation has been updated to reflect the dual tempogram implementation strategy (FFT + Autocorrelation) for maximum accuracy.
+**Date**: 2025-12-17  
+**Status**: ✅ Documentation Updated and Aligned  
+**Implementation Status**: ⚠️ Implemented; tuning/validation in progress (baseline stable)
 
 ---
 
-## Documentation Updates
+## Summary
 
-### 1. Technical Specification
-- ✅ `TEMPOGRAM_PIVOT_EVALUATION.md` - Complete technical plan
-  - Updated to reflect BOTH FFT and autocorrelation tempogram
-  - Added comparison & selection logic
-  - Added deprecation plan for old methods
-  - Documented hybrid approach for future
+This sprint included significant implementation + experimentation around Phase 1F tuning, validation tooling, onset consensus wiring, and BPM fusion/legacy A/B modes. This document records the **documentation alignment** work performed afterward so the project remains readable and traceable.
 
-### 2. Hybrid Approach
-- ✅ `TEMPOGRAM_HYBRID_APPROACH.md` - NEW
-  - FFT coarse + autocorr fine approach
-  - Documented for future implementation
-  - Performance expectations and optimization notes
+---
 
-### 3. Project Roadmap
-- ✅ `ROADMAP.md` - Phase 1F section
-  - Updated checklist: both FFT and autocorr tempogram
-  - Added comparison & selection tasks
-  - Added deprecation plan
-  - Updated timeline: 3-4 hours
+## Current Status (Post-Sprint)
 
-### 4. Development Guide
-- ✅ `DEVELOPMENT.md` - Algorithm documentation
-  - Updated to show dual tempogram approach
-  - Added comparison strategy
-  - Documented hybrid approach
-  - Updated Phase 1F checklist
+Phase 1F is implemented and integrated. Validation tooling has been expanded (A/B modes, ablation toggles, multi-file analysis). Accuracy remains **below target**, but the baseline is stable and fully reproducible.
+
+**See**:
+- `docs/progress-reports/PHASE_1F_VALIDATION.md` (run history + current baseline + failure modes)
+- `docs/progress-reports/PHASE_1F_LITERATURE_REVIEW.md` (Phase 1F literature review)
+- `PIPELINE.md` (authoritative end-to-end pipeline + decision points)
+
+---
+
+## Documentation Updates (this sprint)
+
+### 1) Authoritative pipeline reference
+- ✅ `PIPELINE.md`
+  - Updated to reflect current runtime wiring and decision points
+  - Includes debugging/log guidance
+
+### 2) Validation workflow documentation
+- ✅ `validation/README.md`
+  - Updated to document current validation flags and analysis scripts
+
+### 3) Phase 1F progress reports updated
+- ✅ `PHASE_1F_VALIDATION.md`
+  - Updated run history and baseline results
+  - Includes A/B modes used during tuning
+- ✅ `PHASE_1F_COMPLETE.md`
+  - Updated to include post-implementation wiring & tooling changes
+
+### 4) Root docs alignment
+- ✅ `README.md`, `ROADMAP.md`, `DEVELOPMENT.md`, `CHANGELOG.md`
+  - Updated references and tooling details so readers can reproduce the current state
 
 ### 5. Project README
 - ✅ `README.md` - Project status
@@ -171,29 +175,12 @@ Documented for future implementation:
 
 ---
 
-## Ready for Implementation
+## Next Steps
 
-### Pre-Implementation Checklist
-- ✅ Literature reviews complete (4 papers)
-- ✅ Technical specification complete (dual approach)
-- ✅ Implementation plan defined (6 phases)
-- ✅ File structure defined
-- ✅ Expected results documented
-- ✅ All project docs updated
-- ✅ Consistency verified
-- ✅ Deprecation plan defined
-- ✅ Hybrid approach documented
-
-### Next Steps
-1. ⏳ Begin implementation (Phase 1: Novelty curve)
-2. ⏳ Implement autocorrelation tempogram (Phase 2A)
-3. ⏳ Implement FFT tempogram (Phase 2B)
-4. ⏳ Add comparison logic (Phase 2C)
-5. ⏳ Add multi-resolution (Phase 4)
-6. ⏳ Integrate and test (Phases 5-6)
-7. ⏳ Validate on test batch
-8. ⏳ Compare all methods (old vs new)
-9. ⏳ Deprecate old methods (after validation)
+Documentation work is caught up. Next engineering effort should focus on:
+- Improving Phase 1F metrical-level / harmonic-family selection without regressions
+- Expanding validation beyond a single small batch (multiple batches, aggregate metrics)
+- Keeping A/B modes (legacy-only, ablations) for regression testing until Phase 1F is validated
 
 ---
 

@@ -1,12 +1,18 @@
 # Tempogram Pivot: Documentation Status
 
-**Date**: 2025-01-XX  
-**Status**: ✅ All Documentation Complete and Aligned  
-**Purpose**: Summary of tempogram pivot documentation across all project files
+**Date**: 2025-12-17  
+**Status**: ⚠️ Implemented; tuning/validation in progress  
+**Purpose**: Summary of tempogram pivot documentation across all project files, updated post-implementation
 
 ---
 
 ## Documentation Status
+
+### Status Update (Post-Implementation)
+
+- Phase 1F is **implemented and integrated** (tempogram primary, legacy fallback retained).
+- Validation tooling supports A/B modes (`--force-legacy-bpm`, `--bpm-fusion`, preprocessing/onset toggles).
+- Current baseline on the primary FMA batch is recorded in `docs/progress-reports/PHASE_1F_VALIDATION.md`.
 
 ### ✅ Complete Documentation Files
 
@@ -159,23 +165,13 @@
 
 ---
 
-## Ready for Implementation
+## Notes on the Original Plan vs Current Reality
 
-### Pre-Implementation Checklist
-- ✅ Literature reviews complete (4 papers)
-- ✅ Technical specification complete
-- ✅ Implementation plan defined
-- ✅ File structure defined
-- ✅ Expected results documented
-- ✅ All project docs updated
-- ✅ Consistency verified
-
-### Next Steps
-1. ⏳ Begin implementation (Phase 1: Novelty curve)
-2. ⏳ Implement tempogram core (Phase 2)
-3. ⏳ Add multi-resolution (Phase 3)
-4. ⏳ Integrate and test (Phases 4-5)
-5. ⏳ Validate on test batch
+This document originally tracked “ready for implementation.” It now serves as a cross-reference index.
+For current status and work remaining, prefer:
+- `docs/progress-reports/PHASE_1F_COMPLETE.md`
+- `docs/progress-reports/PHASE_1F_VALIDATION.md`
+- `PIPELINE.md`
 
 ---
 

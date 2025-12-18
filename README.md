@@ -4,10 +4,10 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 
 ## Features
 
-- **BPM Detection**: Dual tempogram-based detection (Phase 1F - in progress)
-  - Current: Autocorrelation + comb filterbank (30% accuracy - to be deprecated)
-  - New: FFT tempogram + Autocorrelation tempogram (85-92% accuracy target)
-  - Strategy: Implement both, compare empirically, use best or ensemble
+- **BPM Detection**: Tempogram-based detection (Phase 1F - implemented, tuning in progress)
+  - Legacy (Phase 1B): Autocorrelation + comb filterbank (kept as fallback; deprecate after validation)
+  - Tempogram (Phase 1F): Novelty curve + FFT tempogram + Autocorrelation tempogram + selection logic
+  - Current validation status: ⚠️ **Not yet validated** (current baseline recorded in `docs/progress-reports/PHASE_1F_VALIDATION.md`)
 - **Key Detection**: Chroma-based analysis with Krumhansl-Kessler template matching
 - **Beat Tracking**: HMM-based beat grid generation with tempo drift correction
 - **ML Refinement**: Optional ONNX model for edge case correction (Phase 2)
@@ -19,7 +19,7 @@ A professional-grade audio analysis engine for DJ applications, providing accura
 ✅ **Phase 1C Complete** - Beat Tracking (HMM Viterbi) implemented and tested  
 ✅ **Phase 1D Complete** - Key Detection (Chroma + Templates) implemented and tested  
 ✅ **Phase 1E Complete** - Integration & Tuning with confidence scoring  
-⏳ **Phase 1F In Progress** - Tempogram BPM Pivot (critical fix - 85-92% accuracy target)
+⚠️ **Phase 1F Implemented (Not Validated)** - Tempogram BPM Pivot (critical fix - tuning required)
 
 Target accuracy:
 - BPM: 88% (±2 BPM tolerance) - **Requires Phase 1F tempogram pivot**
@@ -27,7 +27,7 @@ Target accuracy:
 
 **Current Progress**: 62.5% (5/8 weeks) - Classical DSP pipeline complete, **tempogram pivot required before Phase 2**
 
-**Critical**: Current BPM detection limited to ~30% accuracy. Complete replacement with Fourier tempogram (Grosche et al. 2012) in progress. See `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for details.
+**Critical**: Phase 1F tempogram is integrated, but validation remains below target (dominant error: metrical-level / harmonic-family selection). See `docs/progress-reports/PHASE_1F_VALIDATION.md` and `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md`.
 
 ## Quick Start
 
@@ -72,6 +72,8 @@ The analysis pipeline follows this flow:
 Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinement → Output
 ```
 
+For the authoritative, step-by-step processing logic and decision points (including legacy fallbacks), see `PIPELINE.md`.
+
 ### Modules
 
 - **Preprocessing**: Normalization, silence detection, channel mixing
@@ -106,14 +108,15 @@ Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinem
   - [x] 32 unit tests + integration tests
   - ⚠️ **Limitation**: Frame-by-frame analysis caps accuracy at ~30%
 - [ ] **Phase 1F**: Tempogram BPM Pivot ⏳
-  - [ ] Novelty curve (spectral flux, energy flux, HFC)
-  - [ ] Autocorrelation tempogram (test each BPM hypothesis)
-  - [ ] FFT tempogram (frequency-domain analysis)
-  - [ ] Comparison & selection logic (best method or ensemble)
-  - [ ] Multi-resolution validation (3 hop sizes)
+  - [x] Novelty curve (spectral flux, energy flux, HFC)
+  - [x] Autocorrelation tempogram (test each BPM hypothesis)
+  - [x] FFT tempogram (frequency-domain analysis)
+  - [x] Comparison & selection logic (best method or ensemble)
+  - [x] Multi-resolution validation (3 hop sizes)
+  - [x] Integration and migration (tempogram is primary, legacy fallback retained)
   - [ ] A/B testing framework (old vs new methods)
-  - [ ] Integration and migration
-  - [ ] Testing and validation
+  - [ ] Validation/tuning: metrical-level selection (tempo octave)
+  - [ ] Validation/tuning: novelty conditioning + confidence calibration
   - [ ] Deprecation plan for old methods (after validation)
   - **Target**: 85-92% accuracy (vs 30% current) - using best of both tempogram methods
 - [x] **Phase 1C**: Beat Tracking (HMM) ✅

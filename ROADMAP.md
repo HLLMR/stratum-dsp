@@ -197,51 +197,48 @@
 
 ### Phase 1F: Tempogram BPM Pivot (Critical Fix) 🔄
 
-**Status**: ⏳ Ready for Implementation - Documentation Complete
+**Status**: ⚠️ Implemented - Initial Validation Poor (Tuning Required)
 
 **Problem Identified**: Current period estimation (autocorrelation + comb filterbank) is fundamentally limited to ~30% accuracy due to frame-by-frame analysis approach. This is a critical architectural flaw.
 
 **Solution**: Complete replacement with Fourier tempogram (Grosche et al. 2012), the industry standard achieving 85-92% accuracy through global temporal analysis.
 
-- [ ] **Novelty Curve Implementation**
-  - [ ] Spectral flux novelty detection
-  - [ ] Energy flux novelty detection
-  - [ ] High-frequency content (HFC) novelty detection
-  - [ ] Combined novelty curve with weighted voting
-  - [ ] File: `src/features/period/novelty.rs` (NEW)
+- [x] **Novelty Curve Implementation**
+  - [x] Spectral flux novelty detection
+  - [x] Energy flux novelty detection
+  - [x] High-frequency content (HFC) novelty detection
+  - [x] Combined novelty curve with weighted voting
+  - [x] File: `src/features/period/novelty.rs` (NEW)
 
-- [ ] **Autocorrelation Tempogram**
-  - [ ] Autocorrelation-based periodicity analysis (test each BPM hypothesis)
-  - [ ] For each BPM (40-240, 0.5 resolution): compute autocorrelation at tempo lag
-  - [ ] Peak detection: find BPM with highest autocorrelation strength
-  - [ ] Confidence scoring based on peak prominence
-  - [ ] File: `src/features/period/tempogram_autocorr.rs` (NEW)
-  - [ ] Expected: 75-85% accuracy, 20-40ms for 30s track
+- [x] **Autocorrelation Tempogram**
+  - [x] Autocorrelation-based periodicity analysis (test each BPM hypothesis)
+  - [x] For each BPM (40-240, 0.5 resolution): compute autocorrelation at tempo lag
+  - [x] Peak detection: find BPM with highest autocorrelation strength
+  - [x] Confidence scoring based on peak prominence
+  - [x] File: `src/features/period/tempogram_autocorr.rs` (NEW)
 
-- [ ] **FFT Tempogram**
-  - [ ] FFT-based periodicity analysis (research shows more consistent)
-  - [ ] Apply FFT to novelty curve, convert frequencies to BPM
-  - [ ] Peak detection: find BPM with highest FFT power
-  - [ ] Confidence scoring based on peak prominence
-  - [ ] File: `src/features/period/tempogram_fft.rs` (NEW)
-  - [ ] Expected: 75-85% accuracy, 10-20ms for 30s track
+- [x] **FFT Tempogram**
+  - [x] FFT-based periodicity analysis (research shows more consistent)
+  - [x] Apply FFT to novelty curve, convert frequencies to BPM
+  - [x] Peak detection: find BPM with highest FFT power
+  - [x] Confidence scoring based on peak prominence
+  - [x] File: `src/features/period/tempogram_fft.rs` (NEW)
 
-- [ ] **Tempogram Comparison & Selection**
-  - [ ] Compare both methods on same input
-  - [ ] Selection logic: use best method or ensemble
-  - [ ] A/B testing framework for validation
-  - [ ] File: `src/features/period/tempogram.rs` (NEW - main entry point)
-  - [ ] Expected: 85-92% accuracy (best of both), 30-60ms for 30s track
+- [x] **Tempogram Comparison & Selection**
+  - [x] Compare both methods on same input
+  - [x] Selection logic: use best method or ensemble
+  - [ ] A/B testing framework for validation (old vs new methods; report results)
+  - [x] File: `src/features/period/tempogram.rs` (NEW - main entry point)
 
-- [ ] **Multi-Resolution Validation**
-  - [ ] Tempogram at 3 hop sizes (256, 512, 1024)
-  - [ ] Cross-resolution agreement validation
-  - [ ] Consensus BPM selection
-  - [ ] File: `src/features/period/multi_resolution.rs` (NEW)
+- [x] **Multi-Resolution Validation**
+  - [x] Tempogram at 3 hop sizes (256, 512, 1024)
+  - [x] Cross-resolution agreement validation
+  - [x] Consensus BPM selection
+  - [x] File: `src/features/period/multi_resolution.rs` (NEW)
 
-- [ ] **Integration & Migration**
-  - [ ] Add tempogram methods to `mod.rs` (keep old methods for comparison)
-  - [ ] Update main analysis pipeline in `lib.rs` to use tempogram
+- [x] **Integration & Migration**
+  - [x] Add tempogram methods to `mod.rs` (keep old methods for comparison)
+  - [x] Update main analysis pipeline in `lib.rs` to use tempogram (legacy fallback retained)
   - [ ] A/B testing: run old and new methods side-by-side
   - [ ] Document comparison results
 
@@ -251,14 +248,16 @@
   - [ ] Keep functional for 1-2 releases for transition
   - [ ] Remove in v0.9.2 or later (final cleanup)
 
-- [ ] **Testing & Validation**
-  - [ ] Unit tests for all components (both FFT and autocorr)
-  - [ ] Integration tests with known BPM fixtures (120, 128, 100, 140 BPM)
-  - [ ] A/B comparison framework: old vs FFT vs autocorr tempogram
-  - [ ] Multi-resolution agreement tests
-  - [ ] Confidence scoring validation
-  - [ ] Variable tempo handling tests
-  - [ ] Empirical comparison: measure accuracy, consistency, speed for all methods
+- [x] **Testing (Unit)**
+  - [x] Unit tests for new tempogram components
+  - [ ] Fix failing legacy unit tests (`features::period::candidate_filter`) before declaring full suite “green”
+
+- [ ] **Validation (Empirical)**
+  - [x] Initial FMA Small batch run (30 tracks) completed
+  - [x] Results captured in `docs/progress-reports/PHASE_1F_VALIDATION.md`
+  - [ ] Address dominant failure mode: tempo octave / metrical-level selection (~2× errors)
+  - [ ] Improve novelty conditioning and confidence calibration
+  - [ ] Re-run FMA validation on multiple batches (N ≥ 5) and report mean/variance
 
 - [ ] **Performance Benchmarks**
   - [ ] Single-resolution tempogram: <50ms for 30s track
@@ -266,10 +265,12 @@
   - [ ] Full pipeline performance validation
 
 - [ ] **Documentation**
-  - [ ] Algorithm documentation (tempogram approach)
-  - [ ] Migration guide from old to new system
-  - [ ] Performance benchmarks
-  - [ ] Accuracy validation report
+  - [x] Algorithm documentation (tempogram approach) and technical spec
+  - [x] Validation report (initial run; tuning required)
+  - [x] Literature review (Phase 1F)
+  - [ ] Migration guide from old to new system (post-validation)
+  - [ ] Performance benchmarks report (post-benchmark)
+  - [ ] Accuracy validation report (post-tuning)
 
 **Expected Results**:
 - Accuracy (±2 BPM): 20% → 80%+
@@ -277,7 +278,7 @@
 - Subharmonic Errors: 10-15% → <1%
 - MAE: 34 BPM → 3-4 BPM
 
-**Timeline**: 3-4 hours for complete implementation (both FFT and autocorr tempogram + comparison)
+**Timeline**: Implementation complete; tuning + validation TBD (driven by empirical results)
 
 **Implementation Strategy**:
 - Implement BOTH FFT and autocorrelation tempogram for maximum accuracy
@@ -285,11 +286,11 @@
 - Choose best method or use ensemble
 - Document hybrid approach (FFT coarse + autocorr fine) for future enhancement
 
-**Deliverable**: ✅ v0.9.1-alpha with dual tempogram BPM detection (FFT + autocorr, 85%+ accuracy)
+**Deliverable**: ✅ v0.9.1-alpha with dual tempogram BPM detection implemented; ⚠️ not yet meeting accuracy targets
 
 **Future Enhancement**: Hybrid approach (FFT coarse + autocorr fine) documented for future implementation
 
-**Status**: ⏳ Ready for Implementation - All documentation complete, literature reviewed, plan validated
+**Status**: ⚠️ Implemented - Requires tuning and re-validation to meet targets
 
 ---
 
@@ -379,18 +380,20 @@ v1.0 is ready when:
 ## Current Status
 
 **Last Updated**: 2025-01-XX  
-**Current Phase**: Phase 1E (Complete) → Phase 1F (Next: Tempogram Pivot - Critical Fix)  
+**Current Phase**: Phase 1F (Tempogram Pivot) - Implemented, tuning/validation in progress  
 **Overall Progress**: 62.5% (5/8 weeks complete) + Critical Pivot Required
 
 ---
 
 ## Critical Pivot: Tempogram BPM Detection
 
-**Status**: Phase 1F - Ready for Implementation
+**Status**: Phase 1F - Implemented, initial validation indicates tuning required
 
 The current BPM detection system (Phase 1B) is fundamentally limited to ~30% accuracy due to frame-by-frame analysis. A complete replacement with dual tempogram approach (FFT + Autocorrelation, Grosche et al. 2012) is required before Phase 2. Both methods will be implemented and compared empirically for maximum accuracy.
 
-**See**: `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for complete technical specification
+**See**:
+- `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for complete technical specification
+- `docs/progress-reports/PHASE_1F_VALIDATION.md` for the initial empirical validation run (FMA Small)
 
 **Timeline**: 3-4 hours for complete implementation (both FFT and autocorr tempogram + comparison)
 
@@ -399,7 +402,11 @@ The current BPM detection system (Phase 1B) is fundamentally limited to ~30% acc
 ## Notes
 
 - See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed implementation guidelines
+- See `PIPELINE.md` for the authoritative end-to-end processing logic and decision points
 - See `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md` for tempogram pivot specification
 - Reference `docs/literature/` for academic foundations
 - All placeholder functions are marked with `_` prefix for easy identification
+
+Validation / A-B tooling note:
+- The validation harness and `examples/analyze_file` support controlled modes (`--force-legacy-bpm`, `--bpm-fusion`, `--no-preprocess`, `--no-onset-consensus`) to support Phase 1F tuning and regression testing.
 

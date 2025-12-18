@@ -30,6 +30,18 @@ target/criterion/
 # Logs
 *.log
 
+# Python
+__pycache__/
+*.pyc
+
 # Reference documentation (internal)
 .reference/
+
+# Validation data (external, not in repo)
+validation-data/
+validation/results/
+*.mp3
+*.wav
+fma_small/
+fma_metadata/
 
