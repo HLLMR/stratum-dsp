@@ -353,9 +353,9 @@ So, old methods are still “in the chain,” but only as:
 
 **Docs**: `validation/README.md`  
 **Scripts**:
-- `validation/prepare_test_batch.py`
-- `validation/run_validation.py`
-- `validation/analyze_results.py`
+- `python -m validation.tools.prepare_test_batch`
+- `python -m validation.tools.run_validation`
+- `python -m validation.analysis.analyze_results`
 
 Phase 1F tuning/validation status is tracked in:
 - `docs/progress-reports/PHASE_1F_VALIDATION.md`

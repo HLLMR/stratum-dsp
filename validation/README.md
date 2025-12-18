@@ -37,7 +37,7 @@ This will create the `analyze_file` example binary at:
 Run the script to prepare a test batch from the FMA metadata:
 
 ```bash
-python prepare_test_batch.py --num-tracks 20
+python -m validation.tools.prepare_test_batch --num-tracks 20
 ```
 
 Options:
@@ -52,12 +52,13 @@ This will create `../validation-data/results/test_batch.csv` with the selected t
 Run validation on the test batch:
 
 ```bash
-python run_validation.py
+python -m validation.tools.run_validation
 ```
 
 Options:
 - `--data-path PATH`: Path to validation data directory (default: `../validation-data`)
 - `--binary PATH`: Path to stratum-dsp binary (default: auto-detected)
+- `--jobs N`: Parallel workers for batch processing (default: CPU-1, keeping one core free). Use 1 to disable.
 - `--no-preprocess`: Disable preprocessing (normalization + silence trimming) inside `analyze_file`
 - `--no-onset-consensus`: Disable onset consensus (use energy-flux-only onset list)
 - `--force-legacy-bpm`: Force legacy BPM estimation (Phase 1B) (skip tempogram)
@@ -79,7 +80,7 @@ This will:
 Summarize one or more results files:
 
 ```bash
-python analyze_results.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
+python -m validation.analysis.analyze_results --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
 ```
 
 If no `--file` is provided, the script analyzes the most recent `validation_results_*.csv`.
@@ -89,7 +90,7 @@ If no `--file` is provided, the script analyzes the most recent `validation_resu
 Quickly bucket pred/gt ratios to spot octave/harmonic confusions:
 
 ```bash
-python analyze_ratio_buckets.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
+python -m validation.analysis.analyze_ratio_buckets --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv
 ```
 
 ### 7. Generate an Exemplar Report (diagnostic deep-dive)
@@ -98,7 +99,7 @@ This produces a “surgical” report of the worst failures, per-tempo-band brea
 head-to-head cases where TAG is within ±2 BPM and Stratum is not (and vice versa):
 
 ```bash
-python analyze_exemplars.py --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv --top 20
+python -m validation.analysis.analyze_exemplars --file ../validation-data/results/validation_results_YYYYMMDD_HHMMSS.csv --top 20
 ```
 
 ## Directory Structure
@@ -106,8 +107,8 @@ python analyze_exemplars.py --file ../validation-data/results/validation_results
 ```
 stratum-dsp/
 ├── validation/
-│   ├── prepare_test_batch.py    ← In git
-│   ├── run_validation.py         ← In git
+│   ├── tools/                    ← In git (scripts you run)
+│   ├── analysis/                 ← In git (post-run analysis scripts)
 │   └── README.md                 ← In git
 │
 └── ../validation-data/           ← NOT in git (7+ GB)

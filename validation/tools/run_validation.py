@@ -7,6 +7,7 @@ the results to the ground truth values from FMA metadata.
 """
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
@@ -14,6 +15,13 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+if __package__ in (None, ""):
+    # Allow running as a script: `python validation/tools/run_validation.py`
+    # (module imports require repo root on sys.path).
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from validation._paths import find_repo_root, resolve_data_path
 
 
 def _numerical_to_key(numerical: str) -> str:
@@ -254,7 +262,10 @@ def run_stratum_dsp(binary_path: Path, audio_file: Path, extra_args=None) -> dic
             end = output.rfind("}") + 1
             if start >= 0 and end > start:
                 json_str = output[start:end]
-                return json.loads(json_str)
+                data = json.loads(json_str)
+                if result.stderr:
+                    data["_stderr"] = result.stderr
+                return data
             else:
                 return {"error": "No JSON found in output"}
         except json.JSONDecodeError as e:
@@ -310,6 +321,67 @@ def main():
         action="store_true",
         help="Disable true multi-resolution tempogram BPM estimation (use single hop_size only)",
     )
+    parser.add_argument(
+        "--no-tempogram-percussive",
+        action="store_true",
+        help="Disable HPSS percussive-only tempogram fallback (ambiguous-only)",
+    )
+    parser.add_argument(
+        "--no-tempogram-band-fusion",
+        action="store_true",
+        help="Disable multi-band novelty fusion inside the tempogram estimator",
+    )
+    parser.add_argument("--band-low-max-hz", type=float, default=None)
+    parser.add_argument("--band-mid-max-hz", type=float, default=None)
+    parser.add_argument("--band-high-max-hz", type=float, default=None)
+    parser.add_argument("--band-w-full", type=float, default=None)
+    parser.add_argument("--band-w-low", type=float, default=None)
+    parser.add_argument("--band-w-mid", type=float, default=None)
+    parser.add_argument("--band-w-high", type=float, default=None)
+    parser.add_argument("--band-support-threshold", type=float, default=None)
+    parser.add_argument("--band-consensus-bonus", type=float, default=None)
+    parser.add_argument("--superflux-max-filter-bins", type=int, default=None)
+    parser.add_argument(
+        "--band-score-fusion",
+        action="store_true",
+        help="Let bands affect scoring (not just candidate seeding). More aggressive; can increase metrical errors.",
+    )
+    parser.add_argument(
+        "--no-tempogram-mel-novelty",
+        action="store_true",
+        help="Disable log-mel novelty tempogram variant",
+    )
+    parser.add_argument("--mel-n-mels", type=int, default=None)
+    parser.add_argument("--mel-fmin-hz", type=float, default=None)
+    parser.add_argument("--mel-fmax-hz", type=float, default=None)
+    parser.add_argument("--mel-max-filter-bins", type=int, default=None)
+    parser.add_argument("--mel-weight", type=float, default=None)
+    parser.add_argument("--novelty-w-spectral", type=float, default=None)
+    parser.add_argument("--novelty-w-energy", type=float, default=None)
+    parser.add_argument("--novelty-w-hfc", type=float, default=None)
+    parser.add_argument("--novelty-local-mean-window", type=int, default=None)
+    parser.add_argument("--novelty-smooth-window", type=int, default=None)
+    parser.add_argument(
+        "--max-tracks",
+        type=int,
+        default=None,
+        help="Limit validation to the first N tracks of the loaded batch (useful for quick tuning)",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help=(
+            "Parallel workers for batch processing (default: CPU-1, keeping one core free). "
+            "Use 1 to disable parallelism."
+        ),
+    )
+    parser.add_argument(
+        "--debug-track-ids",
+        type=str,
+        default="",
+        help="Comma-separated track IDs to emit multi-res debug output for (e.g., '40244,11788')",
+    )
     parser.add_argument("--multi-res-top-k", type=int, default=None)
     parser.add_argument("--multi-res-w512", type=float, default=None)
     parser.add_argument("--multi-res-w256", type=float, default=None)
@@ -327,9 +399,18 @@ def main():
     parser.add_argument("--legacy-mul-extreme", type=float, default=None)
     
     args = parser.parse_args()
+
+    # Default parallelism: keep one core free for the system.
+    if args.jobs is None:
+        cpu_n = os.cpu_count() or 1
+        args.jobs = max(1, cpu_n - 1)
+    else:
+        args.jobs = max(1, int(args.jobs))
     
-    # Paths
-    data_path = Path(args.data_path)
+    repo_root = find_repo_root()
+
+    # Paths (treat relative --data-path as relative to repo root)
+    data_path = resolve_data_path(args.data_path, repo_root)
     results_dir = data_path / "results"
     
     # Find the most recent test batch (prefer timestamped ones)
@@ -350,12 +431,24 @@ def main():
         binary_path = Path(args.binary)
     else:
         # Default: look for the example binary (relative to repo root)
-        script_dir = Path(__file__).parent
-        repo_root = script_dir.parent
         if sys.platform == "win32":
-            binary_path = repo_root / "target" / "release" / "examples" / "analyze_file.exe"
+            candidates = [
+                repo_root / "target" / "release" / "examples" / "analyze_file.exe",
+                # Some workflows build into an alternate target dir to avoid Windows exe file locks.
+                repo_root / "target_alt" / "release" / "examples" / "analyze_file.exe",
+                repo_root / "target-alt" / "release" / "examples" / "analyze_file.exe",
+                # Debug fallback (useful for quick iteration)
+                repo_root / "target" / "debug" / "examples" / "analyze_file.exe",
+            ]
+            binary_path = next((p for p in candidates if p.exists()), candidates[0])
         else:
-            binary_path = repo_root / "target" / "release" / "examples" / "analyze_file"
+            candidates = [
+                repo_root / "target" / "release" / "examples" / "analyze_file",
+                repo_root / "target_alt" / "release" / "examples" / "analyze_file",
+                repo_root / "target-alt" / "release" / "examples" / "analyze_file",
+                repo_root / "target" / "debug" / "examples" / "analyze_file",
+            ]
+            binary_path = next((p for p in candidates if p.exists()), candidates[0])
     
     if not test_batch_csv.exists():
         print(f"ERROR: Test batch not found at {test_batch_csv}")
@@ -364,7 +457,8 @@ def main():
     
     if not binary_path.exists():
         print(f"ERROR: stratum-dsp binary not found at {binary_path}")
-        print("Build with: cargo build --release")
+        print("Build with: cargo build --release --example analyze_file")
+        print("Or pass --binary PATH to override")
         sys.exit(1)
     
     # Load test batch
@@ -374,6 +468,11 @@ def main():
         reader = csv.DictReader(f)
         for row in reader:
             test_batch.append(row)
+
+    if args.max_tracks is not None:
+        n = max(1, int(args.max_tracks))
+        test_batch = test_batch[:n]
+        print(f"NOTE: Limiting run to first {len(test_batch)} tracks (--max-tracks)")
     
     print(f"Running validation on {len(test_batch)} tracks...")
     print(f"Using binary: {binary_path}")
@@ -398,6 +497,14 @@ def main():
         extra_args.append("--bpm-fusion")
     if args.no_tempogram_multi_res:
         extra_args.append("--no-tempogram-multi-res")
+    if args.no_tempogram_percussive:
+        extra_args.append("--no-tempogram-percussive")
+    if args.no_tempogram_band_fusion:
+        extra_args.append("--no-tempogram-band-fusion")
+    if args.band_score_fusion:
+        extra_args.append("--band-score-fusion")
+    if args.no_tempogram_mel_novelty:
+        extra_args.append("--no-tempogram-mel-novelty")
 
     # Pass-through multi-resolution tuning flags (if provided)
     if args.multi_res_top_k is not None:
@@ -417,6 +524,55 @@ def main():
     if args.multi_res_human_prior:
         extra_args.append("--multi-res-human-prior")
 
+    # Pass-through band-fusion tuning flags (if provided)
+    if args.band_low_max_hz is not None:
+        extra_args += ["--band-low-max-hz", str(args.band_low_max_hz)]
+    if args.band_mid_max_hz is not None:
+        extra_args += ["--band-mid-max-hz", str(args.band_mid_max_hz)]
+    if args.band_high_max_hz is not None:
+        extra_args += ["--band-high-max-hz", str(args.band_high_max_hz)]
+    if args.band_w_full is not None:
+        extra_args += ["--band-w-full", str(args.band_w_full)]
+    if args.band_w_low is not None:
+        extra_args += ["--band-w-low", str(args.band_w_low)]
+    if args.band_w_mid is not None:
+        extra_args += ["--band-w-mid", str(args.band_w_mid)]
+    if args.band_w_high is not None:
+        extra_args += ["--band-w-high", str(args.band_w_high)]
+    if args.band_support_threshold is not None:
+        extra_args += ["--band-support-threshold", str(args.band_support_threshold)]
+    if args.band_consensus_bonus is not None:
+        extra_args += ["--band-consensus-bonus", str(args.band_consensus_bonus)]
+    if args.superflux_max_filter_bins is not None:
+        extra_args += ["--superflux-max-filter-bins", str(args.superflux_max_filter_bins)]
+    if args.mel_n_mels is not None:
+        extra_args += ["--mel-n-mels", str(args.mel_n_mels)]
+    if args.mel_fmin_hz is not None:
+        extra_args += ["--mel-fmin-hz", str(args.mel_fmin_hz)]
+    if args.mel_fmax_hz is not None:
+        extra_args += ["--mel-fmax-hz", str(args.mel_fmax_hz)]
+    if args.mel_max_filter_bins is not None:
+        extra_args += ["--mel-max-filter-bins", str(args.mel_max_filter_bins)]
+    if args.mel_weight is not None:
+        extra_args += ["--mel-weight", str(args.mel_weight)]
+    if args.novelty_w_spectral is not None:
+        extra_args += ["--novelty-w-spectral", str(args.novelty_w_spectral)]
+    if args.novelty_w_energy is not None:
+        extra_args += ["--novelty-w-energy", str(args.novelty_w_energy)]
+    if args.novelty_w_hfc is not None:
+        extra_args += ["--novelty-w-hfc", str(args.novelty_w_hfc)]
+    if args.novelty_local_mean_window is not None:
+        extra_args += ["--novelty-local-mean-window", str(args.novelty_local_mean_window)]
+    if args.novelty_smooth_window is not None:
+        extra_args += ["--novelty-smooth-window", str(args.novelty_smooth_window)]
+
+    debug_ids = set()
+    if args.debug_track_ids.strip():
+        for part in args.debug_track_ids.split(","):
+            part = part.strip()
+            if part.isdigit():
+                debug_ids.add(int(part))
+
     # Pass-through tuning flags (if provided)
     if args.legacy_preferred_min is not None:
         extra_args += ["--legacy-preferred-min", str(args.legacy_preferred_min)]
@@ -434,34 +590,32 @@ def main():
         extra_args += ["--legacy-mul-extreme", str(args.legacy_mul_extreme)]
     
     results = []
-    
-    for i, track in enumerate(test_batch, 1):
-        track_id = track["track_id"]
+
+    def _process_one(i, track):
+        """Returns: (i, track_id, row_or_none, log_line_or_none)."""
+        track_id = int(track["track_id"])
         audio_file = Path(track["filename"])
         bpm_gt = float(track["bpm_gt"])
         key_gt = track["key_gt"]
-        
-        print(f"[{i}/{len(test_batch)}] Processing track {track_id}...", end=" ", flush=True)
-        
+
         if not audio_file.exists():
-            print("ERROR: Audio file not found")
-            continue
-        
-        # Run stratum-dsp
-        analysis_result = run_stratum_dsp(binary_path, audio_file, extra_args)
-        
+            return i, track_id, None, "ERROR: Audio file not found"
+
+        # Run stratum-dsp (optionally with per-track debug flags)
+        per_track_args = list(extra_args)
+        if track_id in debug_ids:
+            per_track_args += ["--debug-track-id", str(track_id), "--debug-gt-bpm", f"{bpm_gt:.6f}"]
+
+        analysis_result = run_stratum_dsp(binary_path, audio_file, per_track_args)
         if "error" in analysis_result:
-            print(f"ERROR: {analysis_result['error']}")
-            continue
-        
+            return i, track_id, None, f"ERROR: {analysis_result['error']}"
+
         # Extract results
         pred_bpm = analysis_result.get("bpm")
         pred_key = analysis_result.get("key")
-        
         if pred_bpm is None or pred_key is None:
-            print("ERROR: Missing BPM or key in results")
-            continue
-        
+            return i, track_id, None, "ERROR: Missing BPM or key in results"
+
         # Read TAG-based BPM/key (written externally into ID3 tags)
         tag_fields = read_tag_bpm_key(audio_file)
         bpm_tag = tag_fields.get("bpm_tag")
@@ -483,9 +637,7 @@ def main():
         if key_gt_norm:
             key_ref = "GT"
             key_match = "YES" if key_pred_norm == key_gt_norm else "NO"
-            key_tag_match = (
-                "YES" if key_tag_norm == key_gt_norm else "NO" if key_tag_norm else "NO"
-            )
+            key_tag_match = "YES" if key_tag_norm == key_gt_norm else "NO" if key_tag_norm else "NO"
         elif key_tag_norm:
             key_ref = "TAG"
             key_match = "YES" if key_pred_norm == key_tag_norm else "NO"
@@ -494,8 +646,8 @@ def main():
         else:
             key_match = "N/A"
             key_tag_match = "N/A"
-        
-        results.append({
+
+        row = {
             "track_id": track_id,
             "genre": track["genre"],
             "bpm_gt": bpm_gt,
@@ -513,15 +665,50 @@ def main():
             "key_confidence": analysis_result.get("key_confidence", 0.0),
             "key_clarity": analysis_result.get("key_clarity", 0.0),
             "grid_stability": analysis_result.get("grid_stability", 0.0),
-        })
-        
+            "tempogram_multi_res_triggered": analysis_result.get("tempogram_multi_res_triggered", ""),
+            "tempogram_multi_res_used": analysis_result.get("tempogram_multi_res_used", ""),
+            "tempogram_percussive_triggered": analysis_result.get("tempogram_percussive_triggered", ""),
+            "tempogram_percussive_used": analysis_result.get("tempogram_percussive_used", ""),
+        }
+
         bpm_tag_str = f"{float(bpm_tag):.1f}" if bpm_tag is not None else "N/A"
         bpm_tag_err_str = f"{float(bpm_tag_error):.1f}" if bpm_tag is not None else "N/A"
         key_ref_disp = key_ref if key_ref != "N/A" else "N/A"
-        print(
+        log_line = (
             f"BPM: {pred_bpm:.1f} (error: {bpm_error:.1f}), TAG BPM: {bpm_tag_str} (error: {bpm_tag_err_str}), "
             f"Key: {pred_key} ({key_match}, ref={key_ref_disp}), TAG Key: {key_tag or 'N/A'} ({key_tag_match})"
         )
+
+        # If this is a debug track, append stderr below the log line for easier diagnosis.
+        if track_id in debug_ids and analysis_result.get("_stderr"):
+            log_line = log_line + "\n" + str(analysis_result["_stderr"])
+
+        return i, track_id, row, log_line
+
+    total = len(test_batch)
+    if args.jobs <= 1:
+        for i, track in enumerate(test_batch, 1):
+            print(f"[{i}/{total}] Processing track {track['track_id']}...", end=" ", flush=True)
+            _i, _tid, row, log_line = _process_one(i, track)
+            if row is None:
+                print(log_line or "ERROR")
+                continue
+            results.append(row)
+            print(log_line)
+    else:
+        print(f"Parallel batch: jobs={args.jobs} (CPU-1 default)")
+        completed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
+            futs = [ex.submit(_process_one, i, track) for i, track in enumerate(test_batch, 1)]
+            for fut in concurrent.futures.as_completed(futs):
+                i, track_id, row, log_line = fut.result()
+                completed += 1
+                prefix = f"[{completed}/{total}] Track {track_id}"
+                if row is None:
+                    print(f"{prefix}: {log_line or 'ERROR'}")
+                    continue
+                results.append(row)
+                print(f"{prefix}: {log_line}")
     
     # Save results with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

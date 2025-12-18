@@ -12,6 +12,10 @@ pub mod energy_flux;
 pub mod hfc;
 pub mod hpss;
 pub mod spectral_flux;
+// Thresholding utilities (median/MAD, percentile).
+//
+// NOTE: Not currently wired into the main onset detectors; kept as a reference implementation
+// with proper citation for future tuning work.
 pub mod threshold;
 
 /// Onset candidate with confidence

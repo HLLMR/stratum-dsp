@@ -176,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
+        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--debug-track-id ID] [--debug-gt-bpm X] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--no-tempogram-percussive] [--no-tempogram-band-fusion] [--band-score-fusion] [--no-tempogram-mel-novelty] [--mel-n-mels N] [--mel-fmin-hz X] [--mel-fmax-hz X] [--mel-max-filter-bins N] [--mel-weight X] [--novelty-w-spectral X] [--novelty-w-energy X] [--novelty-w-hfc X] [--novelty-local-mean-window N] [--novelty-smooth-window N] [--band-low-max-hz X] [--band-mid-max-hz X] [--band-high-max-hz X] [--band-w-full X] [--band-w-low X] [--band-w-mid X] [--band-w-high X] [--band-support-threshold X] [--band-consensus-bonus X] [--superflux-max-filter-bins N] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
         std::process::exit(1);
     }
     
@@ -192,6 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bpm_candidates = args.contains(&"--bpm-candidates".to_string());
     let no_tempogram_multi_res = args.contains(&"--no-tempogram-multi-res".to_string());
     let multi_res_human_prior = args.contains(&"--multi-res-human-prior".to_string());
+    let no_tempogram_percussive = args.contains(&"--no-tempogram-percussive".to_string());
+    let no_tempogram_band_fusion = args.contains(&"--no-tempogram-band-fusion".to_string());
+    let band_score_fusion = args.contains(&"--band-score-fusion".to_string());
+    let no_tempogram_mel_novelty = args.contains(&"--no-tempogram-mel-novelty".to_string());
 
     fn arg_value(args: &[String], name: &str) -> Option<String> {
         args.iter()
@@ -207,6 +211,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fn parse_usize(args: &[String], name: &str) -> Option<usize> {
         arg_value(args, name).and_then(|v| v.parse::<usize>().ok())
     }
+
+    let debug_track_id = arg_value(&args, "--debug-track-id").and_then(|v| v.parse::<u32>().ok());
+    let debug_gt_bpm = arg_value(&args, "--debug-gt-bpm").and_then(|v| v.parse::<f32>().ok());
     
     // Initialize logger - set debug level if requested or if RUST_LOG is set
     let filter = if debug_mode {
@@ -289,6 +296,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.enable_tempogram_multi_resolution = true;
         config.tempogram_multi_res_use_human_prior = true;
     }
+    if no_tempogram_percussive {
+        config.enable_tempogram_percussive_fallback = false;
+    }
+
+    // Band fusion tuning (Phase 1F)
+    if no_tempogram_band_fusion {
+        config.enable_tempogram_band_fusion = false;
+    }
+    if band_score_fusion {
+        config.tempogram_band_seed_only = false;
+    }
+    if no_tempogram_mel_novelty {
+        config.enable_tempogram_mel_novelty = false;
+    }
+    if debug_track_id.is_some() {
+        config.debug_track_id = debug_track_id;
+        config.debug_gt_bpm = debug_gt_bpm;
+    }
+    if let Some(v) = parse_f32(&args, "--band-low-max-hz") {
+        config.tempogram_band_low_max_hz = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-mid-max-hz") {
+        config.tempogram_band_mid_max_hz = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-high-max-hz") {
+        config.tempogram_band_high_max_hz = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-w-full") {
+        config.tempogram_band_w_full = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-w-low") {
+        config.tempogram_band_w_low = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-w-mid") {
+        config.tempogram_band_w_mid = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-w-high") {
+        config.tempogram_band_w_high = v;
+    }
+    if let Some(v) = parse_usize(&args, "--superflux-max-filter-bins") {
+        config.tempogram_superflux_max_filter_bins = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-support-threshold") {
+        config.tempogram_band_support_threshold = v;
+    }
+    if let Some(v) = parse_f32(&args, "--band-consensus-bonus") {
+        config.tempogram_band_consensus_bonus = v;
+    }
+    if let Some(v) = parse_usize(&args, "--mel-n-mels") {
+        config.tempogram_mel_n_mels = v;
+    }
+    if let Some(v) = parse_f32(&args, "--mel-fmin-hz") {
+        config.tempogram_mel_fmin_hz = v;
+    }
+    if let Some(v) = parse_f32(&args, "--mel-fmax-hz") {
+        config.tempogram_mel_fmax_hz = v;
+    }
+    if let Some(v) = parse_usize(&args, "--mel-max-filter-bins") {
+        config.tempogram_mel_max_filter_bins = v;
+    }
+    if let Some(v) = parse_f32(&args, "--mel-weight") {
+        config.tempogram_mel_weight = v;
+    }
+    if let Some(v) = parse_f32(&args, "--novelty-w-spectral") {
+        config.tempogram_novelty_w_spectral = v;
+    }
+    if let Some(v) = parse_f32(&args, "--novelty-w-energy") {
+        config.tempogram_novelty_w_energy = v;
+    }
+    if let Some(v) = parse_f32(&args, "--novelty-w-hfc") {
+        config.tempogram_novelty_w_hfc = v;
+    }
+    if let Some(v) = parse_usize(&args, "--novelty-local-mean-window") {
+        config.tempogram_novelty_local_mean_window = v;
+    }
+    if let Some(v) = parse_usize(&args, "--novelty-smooth-window") {
+        config.tempogram_novelty_smooth_window = v;
+    }
 
     // Optional tuning overrides for legacy BPM guardrails (confidence multipliers by tempo range)
     if let Some(v) = parse_f32(&args, "--legacy-preferred-min") {
@@ -343,6 +428,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  \"key_confidence\": {:.2},", confidence.key_confidence);
         println!("  \"key_clarity\": {:.2},", result.key_clarity);
         println!("  \"grid_stability\": {:.2},", result.grid_stability);
+        if let Some(v) = result.metadata.tempogram_multi_res_triggered {
+            println!("  \"tempogram_multi_res_triggered\": {},", if v { "true" } else { "false" });
+        }
+        if let Some(v) = result.metadata.tempogram_multi_res_used {
+            println!("  \"tempogram_multi_res_used\": {},", if v { "true" } else { "false" });
+        }
+        if let Some(v) = result.metadata.tempogram_percussive_triggered {
+            println!("  \"tempogram_percussive_triggered\": {},", if v { "true" } else { "false" });
+        }
+        if let Some(v) = result.metadata.tempogram_percussive_used {
+            println!("  \"tempogram_percussive_used\": {},", if v { "true" } else { "false" });
+        }
         if let Some(cands) = result.metadata.tempogram_candidates.as_ref() {
             println!("  \"bpm_candidates\": [");
             for (i, c) in cands.iter().enumerate() {

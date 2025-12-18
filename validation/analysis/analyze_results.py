@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
-"""Analyze validation results (Stratum vs TAG if present)"""
+"""Analyze validation results (Stratum vs TAG if present)
+
+Run from repo root:
+
+  python -m validation.analysis.analyze_results
+"""
 
 import argparse
 import csv
-import glob
-import os
 import statistics
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    # Allow running as a script: `python validation/analysis/analyze_results.py`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from validation._paths import find_repo_root, resolve_data_path
 
 
-def find_latest_results_file() -> str:
-    results_dir = "../validation-data/results"
-    pattern = os.path.join(results_dir, "validation_results_*.csv")
-    files = glob.glob(pattern)
+def find_latest_results_file(results_dir: Path) -> Path:
+    files = list(results_dir.glob("validation_results_*.csv"))
     if not files:
-        raise FileNotFoundError("No validation results files found!")
-    return max(files, key=os.path.getmtime)
+        raise FileNotFoundError(f"No validation results files found in: {results_dir}")
+    return max(files, key=lambda p: p.stat().st_mtime)
 
 
-def analyze_file(results_file: str) -> None:
-    print(f"Using results file: {os.path.basename(results_file)}")
+def analyze_file(results_file: Path) -> None:
+    print(f"Using results file: {results_file.name}")
 
     with open(results_file, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -158,6 +167,12 @@ def analyze_file(results_file: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze one or more validation result CSV files")
     parser.add_argument(
+        "--data-path",
+        type=str,
+        default="../validation-data",
+        help="Path to validation data directory (default: ../validation-data)",
+    )
+    parser.add_argument(
         "--file",
         dest="files",
         action="append",
@@ -166,7 +181,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    files = args.files or [find_latest_results_file()]
+    repo_root = find_repo_root()
+    data_path = resolve_data_path(args.data_path, repo_root)
+    results_dir = data_path / "results"
+
+    files = [Path(f) for f in args.files] if args.files else [find_latest_results_file(results_dir)]
     for idx, fpath in enumerate(files):
         if idx > 0:
             print("\n")

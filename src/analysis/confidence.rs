@@ -331,6 +331,10 @@ mod tests {
                 flags: vec![],
                 confidence_warnings: vec![],
                 tempogram_candidates: None,
+                tempogram_multi_res_triggered: None,
+                tempogram_multi_res_used: None,
+                tempogram_percussive_triggered: None,
+                tempogram_percussive_used: None,
             },
         }
     }

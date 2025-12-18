@@ -28,9 +28,81 @@
 
 use crate::error::AnalysisError;
 use super::BpmEstimate;
-use super::novelty::{superflux_novelty, energy_flux_novelty, hfc_novelty, combined_novelty};
+use super::novelty::{
+    superflux_novelty,
+    superflux_novelty_band,
+    mel_superflux_novelty,
+    energy_flux_novelty,
+    energy_flux_novelty_band,
+    hfc_novelty,
+    hfc_novelty_band,
+    combined_novelty,
+    combined_novelty_with_params,
+};
 use super::tempogram_autocorr::{autocorrelation_tempogram, find_best_bpm_autocorr};
 use super::tempogram_fft::{fft_tempogram, find_best_bpm_fft};
+
+/// Configuration for band-limited novelty fusion inside the tempogram BPM estimator.
+///
+/// This targets the dominant remaining bottleneck we’ve observed empirically:
+/// **candidate generation** (GT not present in top-N candidates), especially in the
+/// 60–90 and 120–150 BPM ambiguity bands.
+#[derive(Debug, Clone)]
+pub struct TempogramBandFusionConfig {
+    /// Enable multi-band novelty + tempogram fusion.
+    pub enabled: bool,
+    /// Upper cutoff for "low" band in Hz (inclusive-ish; converted to bins).
+    pub low_max_hz: f32,
+    /// Upper cutoff for "mid" band in Hz (high band starts at this).
+    pub mid_max_hz: f32,
+    /// Upper cutoff for "high" band in Hz. If <= 0, uses Nyquist.
+    pub high_max_hz: f32,
+    /// Weight for the full-band tempogram contribution when band-score fusion is enabled.
+    pub w_full: f32,
+    /// Weight for the low band contribution.
+    pub w_low: f32,
+    /// Weight for the mid band contribution.
+    pub w_mid: f32,
+    /// Weight for the high band contribution.
+    pub w_high: f32,
+    /// If true, bands contribute only to candidate seeding; scoring uses full-band only.
+    pub seed_only: bool,
+    /// Normalized support threshold for counting a band as supporting a candidate (0..1).
+    pub support_threshold: f32,
+    /// Consensus bonus applied when multiple bands support the same candidate.
+    pub consensus_bonus: f32,
+    /// Enable log-mel novelty tempogram as an additional candidate generator/support signal.
+    pub enable_mel: bool,
+    /// Mel band count used by log-mel novelty.
+    pub mel_n_mels: usize,
+    /// Minimum mel frequency (Hz).
+    pub mel_fmin_hz: f32,
+    /// Maximum mel frequency (Hz). If <= 0, uses Nyquist.
+    pub mel_fmax_hz: f32,
+    /// Max-filter neighborhood radius in mel bins (SuperFlux-style reference).
+    pub mel_max_filter_bins: usize,
+    /// Weight for mel variant when `seed_only=false` (scoring fusion). In seed-only mode, this
+    /// is still used for logging/diagnostics, but scoring remains full-band-only.
+    pub w_mel: f32,
+    /// Novelty weights for combining {spectral, energy, HFC}.
+    pub novelty_w_spectral: f32,
+    /// Novelty weight for energy flux.
+    pub novelty_w_energy: f32,
+    /// Novelty weight for HFC.
+    pub novelty_w_hfc: f32,
+    /// Novelty conditioning windows.
+    pub novelty_local_mean_window: usize,
+    /// Novelty moving-average smoothing window (frames). Use 0/1 to disable.
+    pub novelty_smooth_window: usize,
+    /// Optional: emit debug prints (stderr) for this track ID when running multi-resolution fusion.
+    pub debug_track_id: Option<u32>,
+    /// Optional: ground-truth BPM for debug scoring prints.
+    pub debug_gt_bpm: Option<f32>,
+    /// Optional: how many top candidates per hop to print in debug output.
+    pub debug_top_n: usize,
+    /// SuperFlux max-filter neighborhood radius (bins).
+    pub superflux_max_filter_bins: usize,
+}
 
 /// Debug view of scored tempogram BPM candidates (validation/tuning only).
 #[derive(Debug, Clone)]
@@ -102,6 +174,31 @@ pub fn estimate_bpm_tempogram(
             min_bpm,
             max_bpm,
             bpm_resolution,
+            None,
+        )?
+        .0,
+    )
+}
+
+/// Estimate BPM using tempogram approach with **band fusion** enabled.
+pub fn estimate_bpm_tempogram_band_fusion(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+    hop_size: u32,
+    min_bpm: f32,
+    max_bpm: f32,
+    bpm_resolution: f32,
+    band_cfg: TempogramBandFusionConfig,
+) -> Result<BpmEstimate, AnalysisError> {
+    Ok(
+        estimate_bpm_tempogram_impl(
+            magnitude_spec_frames,
+            sample_rate,
+            hop_size,
+            min_bpm,
+            max_bpm,
+            bpm_resolution,
+            Some(band_cfg),
         )?
         .0,
     )
@@ -124,6 +221,35 @@ pub fn estimate_bpm_tempogram_with_candidates(
         min_bpm,
         max_bpm,
         bpm_resolution,
+        None,
+    )?;
+    if top_n == 0 {
+        cands.clear();
+    } else if cands.len() > top_n {
+        cands.truncate(top_n);
+    }
+    Ok((est, cands))
+}
+
+/// Estimate BPM using tempogram analysis with optional **multi-band novelty fusion**.
+pub fn estimate_bpm_tempogram_with_candidates_band_fusion(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+    hop_size: u32,
+    min_bpm: f32,
+    max_bpm: f32,
+    bpm_resolution: f32,
+    top_n: usize,
+    band_cfg: TempogramBandFusionConfig,
+) -> Result<(BpmEstimate, Vec<TempogramCandidateDebug>), AnalysisError> {
+    let (est, mut cands) = estimate_bpm_tempogram_impl(
+        magnitude_spec_frames,
+        sample_rate,
+        hop_size,
+        min_bpm,
+        max_bpm,
+        bpm_resolution,
+        Some(band_cfg),
     )?;
     if top_n == 0 {
         cands.clear();
@@ -142,49 +268,213 @@ fn estimate_bpm_tempogram_impl(
     min_bpm: f32,
     max_bpm: f32,
     bpm_resolution: f32,
+    band_cfg: Option<TempogramBandFusionConfig>,
 ) -> Result<(BpmEstimate, Vec<TempogramCandidateDebug>), AnalysisError> {
     log::debug!("Estimating BPM using tempogram: {} frames, sample_rate={}, hop_size={}, BPM range=[{:.1}, {:.1}]",
                 magnitude_spec_frames.len(), sample_rate, hop_size, min_bpm, max_bpm);
     
-    // Step 1: Extract novelty curve (combine all three methods)
-    // SuperFlux tends to produce a cleaner onset-strength function than plain spectral flux,
-    // which can reduce metrical-level ambiguity in dense/harmonic material.
-    let spectral_novelty = superflux_novelty(magnitude_spec_frames, 4)?;
-    let energy_novelty = energy_flux_novelty(magnitude_spec_frames)?;
-    let hfc_novelty = hfc_novelty(magnitude_spec_frames, sample_rate)?;
-    
-    let novelty_curve = combined_novelty(&spectral_novelty, &energy_novelty, &hfc_novelty);
-    
-    if novelty_curve.is_empty() {
+    // --- Step 1: novelty extraction (full-band + optional multi-band) ---
+    let n_bins = magnitude_spec_frames
+        .first()
+        .map(|f| f.len())
+        .unwrap_or(0);
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+
+    // Infer FFT size from the STFT magnitude width (compute_stft returns frame_size/2 + 1).
+    let fft_size = (n_bins.saturating_sub(1)).saturating_mul(2).max(2);
+    let freq_resolution = sample_rate as f32 / fft_size as f32;
+
+    fn hz_to_bin(freq_hz: f32, freq_resolution: f32, n_bins: usize) -> usize {
+        if !(freq_hz.is_finite() && freq_hz > 0.0) || !(freq_resolution.is_finite() && freq_resolution > 0.0) {
+            return 0;
+        }
+        let b = (freq_hz / freq_resolution).round() as isize;
+        b.clamp(0, (n_bins as isize).saturating_sub(1)) as usize
+    }
+
+    #[derive(Clone)]
+    struct Variant {
+        name: &'static str,
+        w: f32,
+        fft: Vec<(f32, f32)>,
+        autocorr: Vec<(f32, f32)>,
+        max_fft: f32,
+        max_autocorr: f32,
+    }
+
+    // Full-band novelty (baseline).
+    let sf_k = band_cfg
+        .as_ref()
+        .map(|c| c.superflux_max_filter_bins)
+        .unwrap_or(4);
+    let spectral_full = superflux_novelty(magnitude_spec_frames, sf_k)?;
+    let energy_full = energy_flux_novelty(magnitude_spec_frames)?;
+    let hfc_full = hfc_novelty(magnitude_spec_frames, sample_rate)?;
+    let novelty_full = if let Some(cfg) = band_cfg.as_ref() {
+        combined_novelty_with_params(
+            &spectral_full,
+            &energy_full,
+            &hfc_full,
+            cfg.novelty_w_spectral,
+            cfg.novelty_w_energy,
+            cfg.novelty_w_hfc,
+            cfg.novelty_local_mean_window,
+            cfg.novelty_smooth_window,
+        )
+    } else {
+        combined_novelty(&spectral_full, &energy_full, &hfc_full)
+    };
+    if novelty_full.is_empty() {
         return Err(AnalysisError::ProcessingError(
-            "Novelty curve is empty after extraction".to_string()
+            "Novelty curve is empty after extraction".to_string(),
         ));
     }
-    
-    log::debug!("Novelty curve extracted: {} values", novelty_curve.len());
-    
-    // Step 2: Compute FFT tempogram
-    let fft_tempogram_result = fft_tempogram(
-        &novelty_curve,
-        sample_rate,
-        hop_size,
-        min_bpm,
-        max_bpm,
-    )?;
-    
-    let fft_best = find_best_bpm_fft(&fft_tempogram_result);
-    
-    // Step 3: Compute autocorrelation tempogram
-    let autocorr_tempogram_result = autocorrelation_tempogram(
-        &novelty_curve,
-        sample_rate,
-        hop_size,
-        min_bpm,
-        max_bpm,
-        bpm_resolution,
-    )?;
-    
-    let autocorr_best = find_best_bpm_autocorr(&autocorr_tempogram_result);
+
+    let fft_full = fft_tempogram(&novelty_full, sample_rate, hop_size, min_bpm, max_bpm)?;
+    let autocorr_full =
+        autocorrelation_tempogram(&novelty_full, sample_rate, hop_size, min_bpm, max_bpm, bpm_resolution)?;
+
+    let fft_best = find_best_bpm_fft(&fft_full);
+    let autocorr_best = find_best_bpm_autocorr(&autocorr_full);
+
+    let mut seed_variants: Vec<Variant> = Vec::new();
+    seed_variants.push(Variant {
+        name: "full",
+        w: band_cfg.as_ref().map(|c| c.w_full).unwrap_or(1.0),
+        max_fft: fft_full.first().map(|(_, p)| *p).unwrap_or(1.0).max(1e-12),
+        max_autocorr: autocorr_full.first().map(|(_, s)| *s).unwrap_or(1.0).max(1e-12),
+        fft: fft_full,
+        autocorr: autocorr_full,
+    });
+
+    if let Some(cfg) = band_cfg.as_ref() {
+        if cfg.enabled {
+            // Define 3 musically motivated bands:
+            // - low:   (≈kick/bass fundamentals)        up to low_max_hz
+            // - mid:   (≈snare/body/rhythm textures)    low_max_hz..mid_max_hz
+            // - high:  (≈hi-hats/attacks/transients)    mid_max_hz..high_max_hz/Nyquist
+            //
+            // Start at bin 1 to avoid DC.
+            let b0 = 1usize.min(n_bins.saturating_sub(1));
+            let b_low = hz_to_bin(cfg.low_max_hz, freq_resolution, n_bins).max(b0);
+            let b_mid = hz_to_bin(cfg.mid_max_hz, freq_resolution, n_bins).max(b_low + 1);
+            let b_hi = if cfg.high_max_hz > 0.0 {
+                hz_to_bin(cfg.high_max_hz, freq_resolution, n_bins).max(b_mid + 1)
+            } else {
+                n_bins
+            };
+            let b_hi = b_hi.min(n_bins);
+
+            let bands: [(&'static str, usize, usize, f32); 3] = [
+                ("low", b0, b_low, cfg.w_low),
+                ("mid", b_low, b_mid, cfg.w_mid),
+                ("high", b_mid, b_hi, cfg.w_high),
+            ];
+
+            for (name, start, end, w) in bands {
+                if !(w.is_finite() && w > 0.0) {
+                    continue;
+                }
+                if end <= start + 1 {
+                    continue;
+                }
+
+                let spectral = superflux_novelty_band(magnitude_spec_frames, sf_k, start, end)?;
+                let energy = energy_flux_novelty_band(magnitude_spec_frames, start, end)?;
+                let hfc = hfc_novelty_band(magnitude_spec_frames, start, end)?;
+                let novelty = if let Some(cfg) = band_cfg.as_ref() {
+                    combined_novelty_with_params(
+                        &spectral,
+                        &energy,
+                        &hfc,
+                        cfg.novelty_w_spectral,
+                        cfg.novelty_w_energy,
+                        cfg.novelty_w_hfc,
+                        cfg.novelty_local_mean_window,
+                        cfg.novelty_smooth_window,
+                    )
+                } else {
+                    combined_novelty(&spectral, &energy, &hfc)
+                };
+                if novelty.is_empty() {
+                    continue;
+                }
+
+                let fft = fft_tempogram(&novelty, sample_rate, hop_size, min_bpm, max_bpm)?;
+                let autocorr =
+                    autocorrelation_tempogram(&novelty, sample_rate, hop_size, min_bpm, max_bpm, bpm_resolution)?;
+
+                seed_variants.push(Variant {
+                    name,
+                    w,
+                    max_fft: fft.first().map(|(_, p)| *p).unwrap_or(1.0).max(1e-12),
+                    max_autocorr: autocorr.first().map(|(_, s)| *s).unwrap_or(1.0).max(1e-12),
+                    fft,
+                    autocorr,
+                });
+            }
+        }
+    }
+
+    // Additional representation: log-mel novelty tempogram.
+    if let Some(cfg) = band_cfg.as_ref() {
+        if cfg.enable_mel {
+            let mel_curve = mel_superflux_novelty(
+                magnitude_spec_frames,
+                sample_rate,
+                cfg.mel_n_mels,
+                cfg.mel_fmin_hz,
+                cfg.mel_fmax_hz,
+                cfg.mel_max_filter_bins,
+            )?;
+            if !mel_curve.is_empty() {
+                let fft = fft_tempogram(&mel_curve, sample_rate, hop_size, min_bpm, max_bpm)?;
+                let autocorr =
+                    autocorrelation_tempogram(&mel_curve, sample_rate, hop_size, min_bpm, max_bpm, bpm_resolution)?;
+                seed_variants.push(Variant {
+                    name: "mel",
+                    w: cfg.w_mel,
+                    max_fft: fft.first().map(|(_, p)| *p).unwrap_or(1.0).max(1e-12),
+                    max_autocorr: autocorr.first().map(|(_, s)| *s).unwrap_or(1.0).max(1e-12),
+                    fft,
+                    autocorr,
+                });
+            }
+        }
+    }
+
+    // Scoring variants:
+    // - Always include full-band.
+    // - If seed_only, bands are used ONLY for peak seeding (candidate generation), not scoring.
+    let seed_only = band_cfg.as_ref().map(|c| c.seed_only).unwrap_or(true);
+    let score_variants: Vec<Variant> = if seed_only {
+        seed_variants
+            .iter()
+            .filter(|v| v.name == "full")
+            .cloned()
+            .collect()
+    } else {
+        seed_variants.clone()
+    };
+
+    let support_threshold = band_cfg
+        .as_ref()
+        .map(|c| c.support_threshold)
+        .unwrap_or(0.25)
+        .clamp(0.0, 1.0);
+    let consensus_bonus = band_cfg
+        .as_ref()
+        .map(|c| c.consensus_bonus)
+        .unwrap_or(0.0)
+        .max(0.0);
+
+    let w_sum: f32 = score_variants
+        .iter()
+        .map(|v| v.w.max(0.0))
+        .sum::<f32>()
+        .max(1e-6);
     
     // Step 4: Metrical-level selection (tempo folding) + scoring
     //
@@ -199,7 +489,9 @@ fn estimate_bpm_tempogram_impl(
         .map(|r| (r.bpm, r.confidence))
         .unwrap_or((0.0, 0.0));
 
-    if fft_tempogram_result.is_empty() && autocorr_tempogram_result.is_empty() {
+    // "Empty" guard: if all variants are empty in both representations, we failed.
+    let all_empty = seed_variants.iter().all(|v| v.fft.is_empty() && v.autocorr.is_empty());
+    if all_empty {
         return Err(AnalysisError::ProcessingError(
             "Both FFT and autocorrelation tempograms are empty".to_string(),
         ));
@@ -226,8 +518,10 @@ fn estimate_bpm_tempogram_impl(
 
     // Seed candidates: top-N peaks from both methods + primary picks
     let mut seed_bpms: Vec<f32> = Vec::new();
-    seed_bpms.extend(fft_tempogram_result.iter().take(8).map(|(b, _)| *b));
-    seed_bpms.extend(autocorr_tempogram_result.iter().take(8).map(|(b, _)| *b));
+    for v in &seed_variants {
+        seed_bpms.extend(v.fft.iter().take(8).map(|(b, _)| *b));
+        seed_bpms.extend(v.autocorr.iter().take(8).map(|(b, _)| *b));
+    }
     if fft_primary_bpm > 0.0 {
         seed_bpms.push(fft_primary_bpm);
     }
@@ -257,18 +551,6 @@ fn estimate_bpm_tempogram_impl(
         uniq.push(bpm);
     }
 
-    // Normalize method scores
-    let max_fft = fft_tempogram_result
-        .first()
-        .map(|(_, p)| *p)
-        .unwrap_or(1.0)
-        .max(1e-12);
-    let max_autocorr = autocorr_tempogram_result
-        .first()
-        .map(|(_, s)| *s)
-        .unwrap_or(1.0)
-        .max(1e-12);
-
     // Preferable (but not exclusive) tempo range.
     //
     // Note: FMA ground truth includes many >180 BPM tracks; keep the prior mild.
@@ -287,11 +569,19 @@ fn estimate_bpm_tempogram_impl(
     for bpm in uniq {
         // Use a nearest-neighbor lookup (not max-over-window) to avoid score plateaus where
         // adjacent BPMs all inherit the same peak strength (which collapses confidence to 0.0).
-        let fft_val = lookup_nearest(&fft_tempogram_result, bpm, 0.75);
-        let autocorr_val = lookup_nearest(&autocorr_tempogram_result, bpm, bpm_resolution.max(0.5));
-
-        let fft_norm = (fft_val / max_fft).clamp(0.0, 1.0);
-        let autocorr_norm = (autocorr_val / max_autocorr).clamp(0.0, 1.0);
+        let mut fft_acc = 0.0f32;
+        let mut autocorr_acc = 0.0f32;
+        for v in &score_variants {
+            if v.w <= 0.0 {
+                continue;
+            }
+            let fft_val = lookup_nearest(&v.fft, bpm, 0.75);
+            let autocorr_val = lookup_nearest(&v.autocorr, bpm, bpm_resolution.max(0.5));
+            fft_acc += v.w * (fft_val / v.max_fft).clamp(0.0, 1.0);
+            autocorr_acc += v.w * (autocorr_val / v.max_autocorr).clamp(0.0, 1.0);
+        }
+        let fft_norm = (fft_acc / w_sum).clamp(0.0, 1.0);
+        let autocorr_norm = (autocorr_acc / w_sum).clamp(0.0, 1.0);
 
         // Weighted combination:
         // Empirically, the FFT tempogram peak is often a stronger global indicator, while
@@ -301,6 +591,32 @@ fn estimate_bpm_tempogram_impl(
         // Autocorr gives finer BPM resolution and tends to be strong on rhythmic material,
         // while FFT provides global robustness. Use a balanced blend.
         let mut score = 0.55 * autocorr_norm + 0.45 * fft_norm;
+
+        // Band-consensus bonus: if multiple bands (low/mid/high) support this BPM, lightly boost it.
+        // This is intentionally *not* the same as letting bands directly drive the score.
+        if consensus_bonus > 0.0
+            && band_cfg
+                .as_ref()
+                .map(|c| c.enabled || c.enable_mel)
+                .unwrap_or(false)
+        {
+            let mut support_bands = 0u32;
+            for v in &seed_variants {
+                if v.name == "full" {
+                    continue;
+                }
+                let s_fft = (lookup_nearest(&v.fft, bpm, 0.75) / v.max_fft).clamp(0.0, 1.0);
+                let s_ac = (lookup_nearest(&v.autocorr, bpm, bpm_resolution.max(0.5)) / v.max_autocorr)
+                    .clamp(0.0, 1.0);
+                let s = s_fft.max(s_ac);
+                if s >= support_threshold {
+                    support_bands += 1;
+                }
+            }
+            if support_bands >= 2 {
+                score *= 1.0 + consensus_bonus * (support_bands as f32 - 1.0);
+            }
+        }
 
         // Mild metrical prior: penalize extreme tempos unless strongly supported
         if bpm > PREFERRED_MAX {
@@ -379,7 +695,7 @@ fn estimate_bpm_tempogram_impl(
     }
 
     log::debug!(
-        "Tempogram metrical selection: chosen {:.2} BPM (score={:.3}, conf={:.3}, fft_norm={:.3}, autocorr_norm={:.3}), primary FFT={:.2} (conf={:.3}), primary Autocorr={:.2} (conf={:.3})",
+        "Tempogram metrical selection: chosen {:.2} BPM (score={:.3}, conf={:.3}, fft_norm={:.3}, autocorr_norm={:.3}), primary FFT={:.2} (conf={:.3}), primary Autocorr={:.2} (conf={:.3}), variants={}",
         best.bpm,
         best.score,
         confidence,
@@ -388,7 +704,12 @@ fn estimate_bpm_tempogram_impl(
         fft_primary_bpm,
         fft_primary_conf,
         autocorr_primary_bpm,
-        autocorr_primary_conf
+        autocorr_primary_conf,
+        format!(
+            "seed=[{}], score=[{}]",
+            seed_variants.iter().map(|v| v.name).collect::<Vec<_>>().join("+"),
+            score_variants.iter().map(|v| v.name).collect::<Vec<_>>().join("+")
+        )
     );
     if let Some(s) = second {
         log::debug!(

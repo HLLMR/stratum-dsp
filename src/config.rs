@@ -89,6 +89,102 @@ pub struct AnalysisConfig {
     /// Default: false.
     pub tempogram_multi_res_use_human_prior: bool,
 
+    /// Enable HPSS percussive-only tempogram fallback (ambiguous-only).
+    ///
+    /// This computes an HPSS decomposition on the (already computed) STFT magnitudes and re-runs
+    /// tempogram on the percussive component. Intended to reduce low-tempo half/double-time traps
+    /// caused by sustained harmonic energy.
+    ///
+    /// Default: true (Phase 1F tuning path).
+    pub enable_tempogram_percussive_fallback: bool,
+
+    /// Enable multi-band novelty fusion inside the tempogram estimator.
+    ///
+    /// This computes novelty curves over low/mid/high frequency bands, runs the tempogram
+    /// on each, then fuses their support when scoring BPM candidates. This is primarily
+    /// intended to improve **candidate generation** (getting GT into top-N candidates),
+    /// which is currently the limiting factor after metrical selection improvements.
+    ///
+    /// Default: true (Phase 1F tuning path).
+    pub enable_tempogram_band_fusion: bool,
+
+    /// Band split cutoffs (Hz). Bands are: low=[~0..low_max], mid=[low_max..mid_max], high=[mid_max..high_max].
+    /// If `tempogram_band_high_max_hz <= 0`, high extends to Nyquist.
+    pub tempogram_band_low_max_hz: f32,
+    /// Upper cutoff for the mid band (Hz).
+    pub tempogram_band_mid_max_hz: f32,
+    /// Upper cutoff for the high band (Hz). If <= 0, uses Nyquist.
+    pub tempogram_band_high_max_hz: f32,
+
+    /// Weight for the full-band tempogram contribution when band-score fusion is enabled.
+    pub tempogram_band_w_full: f32,
+    /// Weight for the low band contribution.
+    pub tempogram_band_w_low: f32,
+    /// Weight for the mid band contribution.
+    pub tempogram_band_w_mid: f32,
+    /// Weight for the high band contribution.
+    pub tempogram_band_w_high: f32,
+
+    /// If true, multi-band tempograms contribute **only to candidate seeding** (peak proposals),
+    /// while final candidate scoring remains full-band-only.
+    ///
+    /// This is the safer default: high-frequency bands often emphasize subdivisions (hi-hats),
+    /// which can otherwise increase 2× / 3:2 metrical errors if they directly affect scoring.
+    pub tempogram_band_seed_only: bool,
+
+    /// Minimum per-band normalized support required to count as "supporting" a BPM candidate
+    /// for band-consensus scoring.
+    ///
+    /// Range: [0, 1]. Default: 0.25.
+    pub tempogram_band_support_threshold: f32,
+
+    /// Bonus multiplier applied when **multiple bands** support the same BPM candidate.
+    ///
+    /// This is a lightweight "consensus" heuristic intended to reduce metrical/subdivision errors
+    /// (e.g., a 2× tempo supported only by the high band should not win over a tempo supported by
+    /// low+mid bands).
+    ///
+    /// Score adjustment: `score *= (1 + bonus * max(0, support_bands - 1))`.
+    pub tempogram_band_consensus_bonus: f32,
+
+    /// Tempogram novelty weights for combining {spectral, energy, HFC}.
+    pub tempogram_novelty_w_spectral: f32,
+    /// Tempogram novelty weight for energy flux.
+    pub tempogram_novelty_w_energy: f32,
+    /// Tempogram novelty weight for HFC.
+    pub tempogram_novelty_w_hfc: f32,
+    /// Tempogram novelty conditioning windows.
+    pub tempogram_novelty_local_mean_window: usize,
+    /// Tempogram novelty moving-average smoothing window (frames). Use 0/1 to disable.
+    pub tempogram_novelty_smooth_window: usize,
+
+    /// Debug: if set, the `analyze_file` example will pass this track ID through to the
+    /// multi-resolution fusion so it can print detailed scoring diagnostics.
+    pub debug_track_id: Option<u32>,
+    /// Debug: optional ground-truth BPM passed alongside `debug_track_id`.
+    pub debug_gt_bpm: Option<f32>,
+    /// Debug: number of top candidates per hop to print when `debug_track_id` is set.
+    pub debug_top_n: usize,
+
+    /// Enable log-mel novelty tempogram as an additional candidate generator/support signal.
+    ///
+    /// This computes a log-mel SuperFlux-style novelty curve, then runs the tempogram on it.
+    /// The resulting candidates are used for seeding and for the consensus bonus logic.
+    pub enable_tempogram_mel_novelty: bool,
+    /// Mel band count used by log-mel novelty.
+    pub tempogram_mel_n_mels: usize,
+    /// Minimum mel frequency (Hz).
+    pub tempogram_mel_fmin_hz: f32,
+    /// Maximum mel frequency (Hz). If <= 0, uses Nyquist.
+    pub tempogram_mel_fmax_hz: f32,
+    /// Max-filter neighborhood radius in mel bins (SuperFlux-style reference).
+    pub tempogram_mel_max_filter_bins: usize,
+    /// Weight for mel variant when band scoring fusion is enabled (`seed_only=false`).
+    pub tempogram_mel_weight: f32,
+
+    /// SuperFlux max-filter neighborhood radius (bins) used by the tempogram novelty extractor.
+    pub tempogram_superflux_max_filter_bins: usize,
+
     /// Emit tempogram BPM candidate list (top-N) into `AnalysisMetadata` for validation/tuning.
     ///
     /// Default: false (avoid bloating outputs in normal use).
@@ -185,6 +281,39 @@ impl Default for AnalysisConfig {
             tempogram_multi_res_double_time_512_factor: 0.92,
             tempogram_multi_res_margin_threshold: 0.08,
             tempogram_multi_res_use_human_prior: false,
+            // HPSS percussive fallback is very expensive and (so far) has not shown consistent gains.
+            // Keep it opt-in to avoid multi-second outliers during batch runs.
+            enable_tempogram_percussive_fallback: false,
+            enable_tempogram_band_fusion: true,
+            // Default cutoffs (Hz): ~kick/bass fundamentals, then body/rhythm textures, then attacks.
+            tempogram_band_low_max_hz: 200.0,
+            tempogram_band_mid_max_hz: 2000.0,
+            tempogram_band_high_max_hz: 8000.0,
+            // Default weights: keep full-band as anchor, but allow bands to pull candidates into view.
+            tempogram_band_w_full: 0.40,
+            tempogram_band_w_low: 0.25,
+            tempogram_band_w_mid: 0.20,
+            tempogram_band_w_high: 0.15,
+            tempogram_band_seed_only: true,
+            tempogram_band_support_threshold: 0.25,
+            tempogram_band_consensus_bonus: 0.08,
+            // Novelty weighting defaults (tuned on 200-track validation):
+            // shift weight toward transient-heavy signals (energy/HFC) to reduce octave/subdivision traps.
+            tempogram_novelty_w_spectral: 0.30,
+            tempogram_novelty_w_energy: 0.35,
+            tempogram_novelty_w_hfc: 0.35,
+            tempogram_novelty_local_mean_window: 16,
+            tempogram_novelty_smooth_window: 5,
+            debug_track_id: None,
+            debug_gt_bpm: None,
+            debug_top_n: 5,
+            enable_tempogram_mel_novelty: true,
+            tempogram_mel_n_mels: 40,
+            tempogram_mel_fmin_hz: 30.0,
+            tempogram_mel_fmax_hz: 8000.0,
+            tempogram_mel_max_filter_bins: 2,
+            tempogram_mel_weight: 0.15,
+            tempogram_superflux_max_filter_bins: 4,
             emit_tempogram_candidates: false,
             tempogram_candidates_top_n: 10,
             // Tuned defaults (empirical, small-batch): slightly wider preferred band and

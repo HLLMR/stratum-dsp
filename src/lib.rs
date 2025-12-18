@@ -44,7 +44,6 @@ pub mod analysis;
 pub mod config;
 pub mod error;
 pub mod features;
-pub mod io;
 pub mod preprocessing;
 
 #[cfg(feature = "ml")]
@@ -322,11 +321,54 @@ pub fn analyze_audio(
     };
 
     let mut tempogram_candidates: Option<Vec<crate::analysis::result::TempoCandidateDebug>> = None;
+    let mut tempogram_multi_res_triggered: Option<bool> = None;
+    let mut tempogram_multi_res_used: Option<bool> = None;
+    let mut tempogram_percussive_triggered: Option<bool> = None;
+    let mut tempogram_percussive_used: Option<bool> = None;
 
     let tempogram_estimate = if !config.force_legacy_bpm && !magnitude_spec_frames.is_empty() {
         use crate::analysis::result::TempoCandidateDebug;
         use features::period::multi_resolution::multi_resolution_tempogram_from_samples;
-        use features::period::tempogram::{estimate_bpm_tempogram, estimate_bpm_tempogram_with_candidates};
+        use features::period::tempogram::{
+            estimate_bpm_tempogram,
+            estimate_bpm_tempogram_band_fusion,
+            estimate_bpm_tempogram_with_candidates,
+            estimate_bpm_tempogram_with_candidates_band_fusion,
+            TempogramBandFusionConfig,
+        };
+
+        let band_cfg = TempogramBandFusionConfig {
+            enabled: config.enable_tempogram_band_fusion,
+            low_max_hz: config.tempogram_band_low_max_hz,
+            mid_max_hz: config.tempogram_band_mid_max_hz,
+            high_max_hz: config.tempogram_band_high_max_hz,
+            w_full: config.tempogram_band_w_full,
+            w_low: config.tempogram_band_w_low,
+            w_mid: config.tempogram_band_w_mid,
+            w_high: config.tempogram_band_w_high,
+            seed_only: config.tempogram_band_seed_only,
+            support_threshold: config.tempogram_band_support_threshold,
+            consensus_bonus: config.tempogram_band_consensus_bonus,
+            enable_mel: config.enable_tempogram_mel_novelty,
+            mel_n_mels: config.tempogram_mel_n_mels,
+            mel_fmin_hz: config.tempogram_mel_fmin_hz,
+            mel_fmax_hz: config.tempogram_mel_fmax_hz,
+            mel_max_filter_bins: config.tempogram_mel_max_filter_bins,
+            w_mel: config.tempogram_mel_weight,
+            novelty_w_spectral: config.tempogram_novelty_w_spectral,
+            novelty_w_energy: config.tempogram_novelty_w_energy,
+            novelty_w_hfc: config.tempogram_novelty_w_hfc,
+            novelty_local_mean_window: config.tempogram_novelty_local_mean_window,
+            novelty_smooth_window: config.tempogram_novelty_smooth_window,
+            debug_track_id: config.debug_track_id,
+            debug_gt_bpm: config.debug_gt_bpm,
+            debug_top_n: config.debug_top_n,
+            superflux_max_filter_bins: config.tempogram_superflux_max_filter_bins,
+        };
+
+        let use_aux_variants = config.enable_tempogram_band_fusion
+            || config.enable_tempogram_mel_novelty
+            || config.tempogram_band_consensus_bonus > 0.0;
 
         if config.enable_tempogram_multi_resolution {
             // Run single-resolution tempogram first; only escalate to multi-resolution
@@ -336,22 +378,110 @@ pub fn analyze_audio(
                 .max(config.tempogram_multi_res_top_k)
                 .max(10);
 
-            match estimate_bpm_tempogram_with_candidates(
-                &magnitude_spec_frames,
-                sample_rate,
-                config.hop_size as u32,
-                config.min_bpm,
-                config.max_bpm,
-                config.bpm_resolution,
-                base_top_n,
-            ) {
+            let base_call = if use_aux_variants {
+                estimate_bpm_tempogram_with_candidates_band_fusion(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                    base_top_n,
+                    band_cfg.clone(),
+                )
+            } else {
+                estimate_bpm_tempogram_with_candidates(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                    base_top_n,
+                )
+            };
+
+            match base_call {
                 Ok((base_est, base_cands)) => {
                     let trap_low = base_est.bpm >= 55.0 && base_est.bpm <= 80.0;
                     let trap_high = base_est.bpm >= 170.0 && base_est.bpm <= 200.0;
-                    let ambiguous = base_est.confidence < 0.40 || base_est.method_agreement < 2 || trap_low || trap_high;
+
+                    // Additional ambiguity detection: if the single-resolution candidate list already
+                    // contains strong tempo-family alternatives (2× or 1/2×), escalate to multi-res.
+                    //
+                    // This catches cases like GT~184 predicted ~92 where base BPM is not in our
+                    // original “trap” window but is a classic half-time error.
+                    fn cand_support(
+                        cands: &[features::period::tempogram::TempogramCandidateDebug],
+                        bpm: f32,
+                        tol: f32,
+                    ) -> f32 {
+                        let mut best = 0.0f32;
+                        for c in cands {
+                            if (c.bpm - bpm).abs() <= tol {
+                                best = best.max(c.score);
+                            }
+                        }
+                        best
+                    }
+
+                    let tol = 2.0f32.max(config.bpm_resolution);
+                    let s_base = cand_support(&base_cands, base_est.bpm, tol);
+                    let s_2x = cand_support(&base_cands, base_est.bpm * 2.0, tol);
+                    let s_half = cand_support(&base_cands, base_est.bpm * 0.5, tol);
+                    let family_competes = (s_2x > 0.0 && s_2x >= s_base * 0.90)
+                        || (s_half > 0.0 && s_half >= s_base * 0.90);
+
+                    // IMPORTANT: Our tempogram "confidence" is currently conservative and can be low even
+                    // for correct tempos. If we use a generic confidence threshold, we end up escalating
+                    // on nearly every track (catastrophic for performance, especially with HPSS).
+                    //
+                    // For now, only escalate in the known tempo-family trap zones. We'll widen this later
+                    // once we have a better uncertainty measure.
+                    // Escape hatch: if confidence/agreement is poor and a 2× fold would land in the
+                    // high trap zone (or a 1/2× fold would land in the low trap zone), escalate even
+                    // if the candidate list didn’t surface it strongly (prevents missing half-time errors).
+                    // Only use the "fold_into_trap" escape hatch for the missed half-time case:
+                    // base ~90, true ~180. Do NOT trigger on base ~120 (since 120/2=60 is common and
+                    // would cause unnecessary multi-res runs / regressions).
+                    let fold_into_trap = base_est.bpm * 2.0 >= 170.0 && base_est.bpm * 2.0 <= 200.0;
+                    let weak_base = base_est.method_agreement == 0 || base_est.confidence < 0.06;
+
+                    let ambiguous = trap_low || trap_high || family_competes || (weak_base && fold_into_trap);
+                    // Instrumentation: "triggered" means we *considered* escalation, not just "base looks ambiguous".
+                    tempogram_multi_res_triggered = Some(ambiguous);
+
+                    if let Some(track_id) = config.debug_track_id {
+                        eprintln!("\n=== DEBUG base tempogram (track_id={}) ===", track_id);
+                        if let Some(gt) = config.debug_gt_bpm {
+                            eprintln!("GT bpm: {:.3}", gt);
+                        }
+                        eprintln!(
+                            "base_est: bpm={:.2} conf={:.4} agree={} (trap_low={} trap_high={} ambiguous={})",
+                            base_est.bpm,
+                            base_est.confidence,
+                            base_est.method_agreement,
+                            trap_low,
+                            trap_high,
+                            ambiguous
+                        );
+                        eprintln!(
+                            "ambiguity signals: family_competes={} (s_base={:.4} s_2x={:.4} s_half={:.4}) weak_base={} fold_into_trap={}",
+                            family_competes,
+                            s_base,
+                            s_2x,
+                            s_half,
+                            weak_base,
+                            fold_into_trap
+                        );
+                        if !ambiguous {
+                            eprintln!("NOTE: multi-res not run (outside trap zones).");
+                        }
+                    }
 
                     let mut chosen_est = base_est.clone();
                     let mut chosen_cands = base_cands;
+                    let mut used_mr = false;
 
                     if ambiguous {
                         match multi_resolution_tempogram_from_samples(
@@ -369,8 +499,10 @@ pub fn analyze_audio(
                             config.tempogram_multi_res_double_time_512_factor,
                             config.tempogram_multi_res_margin_threshold,
                             config.tempogram_multi_res_use_human_prior,
+                            Some(band_cfg.clone()),
                         ) {
                             Ok((mr_est, mr_cands_512)) => {
+                                let mr_est_log = mr_est.clone();
                                 // Choose multi-res only if it provides stronger evidence or
                                 // a safer tempo-family choice in the trap regions.
                                 let rel = if base_est.bpm > 1e-6 {
@@ -400,12 +532,119 @@ pub fn analyze_audio(
                                 if mr_better {
                                     chosen_est = mr_est;
                                     chosen_cands = mr_cands_512;
+                                    used_mr = true;
+                                }
+
+                                if let Some(track_id) = config.debug_track_id {
+                                    eprintln!("\n=== DEBUG multi-res decision (track_id={}) ===", track_id);
+                                    if let Some(gt) = config.debug_gt_bpm {
+                                        eprintln!("GT bpm: {:.3}", gt);
+                                    }
+                                    eprintln!("base_est: bpm={:.2} conf={:.4} agree={}", base_est.bpm, base_est.confidence, base_est.method_agreement);
+                                    eprintln!("mr_est:   bpm={:.2} conf={:.4} agree={}", mr_est_log.bpm, mr_est_log.confidence, mr_est_log.method_agreement);
+                                    eprintln!("ambiguous(trap_low||trap_high)={}", ambiguous);
+                                    eprintln!("rel={:.3} family_related={} forbid_promote_high={}", rel, family_related, forbid_promote_high);
+                                    eprintln!("mr_better={} used_mr={}", mr_better, used_mr);
                                 }
                             }
                             Err(e) => {
                                 log::debug!("Multi-resolution escalation skipped (failed): {}", e);
                             }
                         }
+                    }
+                    tempogram_multi_res_used = Some(used_mr);
+
+                    // Percussive-only fallback (HPSS) for ambiguous cases (generation improvement).
+                    //
+                    // Important: HPSS is expensive. We only run it when we are in the classic
+                    // low-tempo ambiguity zone where sustained harmonic content commonly causes
+                    // half/double-time traps.
+                    let percussive_needed = ambiguous && trap_low;
+                    tempogram_percussive_triggered = Some(percussive_needed);
+
+                    if config.enable_tempogram_percussive_fallback && percussive_needed {
+                        use features::onset::hpss::hpss_decompose;
+
+                        // Decompose the already computed spectrogram at the base hop_size.
+                        match hpss_decompose(&magnitude_spec_frames, config.hpss_margin) {
+                            Ok((_h, p)) => {
+                                // Re-run tempogram on percussive component.
+                                let p_call = if use_aux_variants {
+                                    estimate_bpm_tempogram_with_candidates_band_fusion(
+                                        &p,
+                                        sample_rate,
+                                        config.hop_size as u32,
+                                        config.min_bpm,
+                                        config.max_bpm,
+                                        config.bpm_resolution,
+                                        base_top_n,
+                                        band_cfg.clone(),
+                                    )
+                                } else {
+                                    estimate_bpm_tempogram_with_candidates(
+                                        &p,
+                                        sample_rate,
+                                        config.hop_size as u32,
+                                        config.min_bpm,
+                                        config.max_bpm,
+                                        config.bpm_resolution,
+                                        base_top_n,
+                                    )
+                                };
+
+                                match p_call {
+                                    Ok((p_est, p_cands)) => {
+                                        // Accept percussive estimate only when it is a tempo-family move
+                                        // and does not promote sane tempos into extremes.
+                                        let rel = if chosen_est.bpm > 1e-6 {
+                                            (p_est.bpm / chosen_est.bpm).max(chosen_est.bpm / p_est.bpm)
+                                        } else {
+                                            1.0
+                                        };
+                                        let family_related = (rel - 2.0).abs() < 0.05
+                                            || (rel - 1.5).abs() < 0.05
+                                            || (rel - (4.0 / 3.0)).abs() < 0.05
+                                            || (rel - (3.0 / 2.0)).abs() < 0.05
+                                            || (rel - (2.0 / 3.0)).abs() < 0.05
+                                            || (rel - (3.0 / 4.0)).abs() < 0.05;
+
+                                        let forbid_promote_high = chosen_est.bpm <= 180.0 && p_est.bpm > 180.0;
+
+                                        // Slightly more permissive acceptance in the low-tempo trap region:
+                                        // if percussive yields a coherent 2× tempo in a common range, take it
+                                        // even if confidence is only marginally better.
+                                        let base_low_trap = trap_low || base_est.bpm < 95.0;
+                                        let percussive_in_common = p_est.bpm >= 70.0 && p_est.bpm <= 180.0;
+
+                                        let p_better = !forbid_promote_high
+                                            && family_related
+                                            && percussive_in_common
+                                            && (p_est.confidence >= chosen_est.confidence + 0.04
+                                                || (base_low_trap && p_est.confidence >= chosen_est.confidence * 0.85)
+                                                || (p_est.method_agreement > chosen_est.method_agreement
+                                                    && p_est.confidence >= chosen_est.confidence * 0.92));
+
+                                        if p_better {
+                                            chosen_est = p_est;
+                                            chosen_cands = p_cands;
+                                            tempogram_percussive_used = Some(true);
+                                        } else {
+                                            tempogram_percussive_used = Some(false);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::debug!("Percussive tempogram fallback failed: {}", e);
+                                        tempogram_percussive_used = Some(false);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::debug!("HPSS decomposition for percussive tempogram failed: {}", e);
+                                tempogram_percussive_used = Some(false);
+                            }
+                        }
+                    } else if config.enable_tempogram_percussive_fallback {
+                        tempogram_percussive_used = Some(false);
                     }
 
                     if config.emit_tempogram_candidates {
@@ -439,15 +678,30 @@ pub fn analyze_audio(
                 }
             }
         } else if config.emit_tempogram_candidates {
-            match estimate_bpm_tempogram_with_candidates(
-                &magnitude_spec_frames,
-                sample_rate,
-                config.hop_size as u32,
-                config.min_bpm,
-                config.max_bpm,
-                config.bpm_resolution,
-                config.tempogram_candidates_top_n,
-            ) {
+            let call = if use_aux_variants {
+                estimate_bpm_tempogram_with_candidates_band_fusion(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                    config.tempogram_candidates_top_n,
+                    band_cfg.clone(),
+                )
+            } else {
+                estimate_bpm_tempogram_with_candidates(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                    config.tempogram_candidates_top_n,
+                )
+            };
+
+            match call {
                 Ok((estimate, cands)) => {
                     tempogram_candidates = Some(
                         cands.into_iter()
@@ -475,14 +729,28 @@ pub fn analyze_audio(
                 }
             }
         } else {
-            match estimate_bpm_tempogram(
-                &magnitude_spec_frames,
-                sample_rate,
-                config.hop_size as u32,
-                config.min_bpm,
-                config.max_bpm,
-                config.bpm_resolution,
-            ) {
+            let call = if use_aux_variants {
+                estimate_bpm_tempogram_band_fusion(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                    band_cfg.clone(),
+                )
+            } else {
+                estimate_bpm_tempogram(
+                    &magnitude_spec_frames,
+                    sample_rate,
+                    config.hop_size as u32,
+                    config.min_bpm,
+                    config.max_bpm,
+                    config.bpm_resolution,
+                )
+            };
+
+            match call {
                 Ok(estimate) => {
                     log::debug!(
                         "Tempogram BPM estimate: {:.2} (confidence: {:.3}, method_agreement: {})",
@@ -743,6 +1011,10 @@ pub fn analyze_audio(
             flags,
             confidence_warnings,
             tempogram_candidates,
+            tempogram_multi_res_triggered,
+            tempogram_multi_res_used,
+            tempogram_percussive_triggered,
+            tempogram_percussive_used,
         },
     };
     

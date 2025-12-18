@@ -701,7 +701,9 @@ println!("Onsets detected: {}", result.metadata.methods_used.len());
    - Less relevant for DJ use case
 3. **Median + MAD Integration**: Can be integrated into onset methods if needed
 4. **True-Peak Measurement**: For LUFS normalization (ITU-R BS.1770-4)
-5. **Audio Decoder**: Implement `decode_audio()` using Symphonia for file I/O
+5. **Audio Decoder**: Decoding is currently handled by the example CLI (`examples/analyze_file.rs`) via Symphonia.
+   - The core library API remains sample-based (`analyze_audio(samples, sample_rate, ...)`).
+   - A future library-level decoder API can be implemented later if needed (Phase 2+).
 
 ---
 

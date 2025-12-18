@@ -16,6 +16,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Allow running as a script: `python validation/tools/prepare_test_batch.py`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from validation._paths import find_repo_root, resolve_data_path
+
 
 def find_track_file(fma_path: Path, track_id: int) -> Path:
     """Find the audio file for a given track ID."""
@@ -177,8 +183,10 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
     
-    # Paths
-    data_path = Path(args.data_path)
+    repo_root = find_repo_root()
+
+    # Paths (treat relative --data-path as relative to repo root)
+    data_path = resolve_data_path(args.data_path, repo_root)
     fma_path = data_path / "fma_small"
     metadata_path = data_path / "fma_metadata"
     results_dir = data_path / "results"

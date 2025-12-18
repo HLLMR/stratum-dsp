@@ -1,6 +1,6 @@
 # Phase 1F: Tempogram BPM Pivot - Validation Report
 
-**Date**: 2025-12-17  
+**Date**: 2025-12-18  
 **Status**: ⚠️ **TUNING IN PROGRESS (STABLE BASELINE, NOT YET AT TARGET)**  
 **Dataset**: FMA Small (Echonest tempo)  
 
@@ -11,6 +11,20 @@
 Phase 1F replaces the legacy period estimation (Phase 1B autocorrelation + comb filterbank) with a dual tempogram approach (FFT + autocorrelation tempogram) based on Grosche et al. (2012). This report records **post-implementation validation runs** on an FMA Small test batch and summarizes observed failure modes and tuning progress.
 
 **Important**: Initial validation was far below the Phase 1F target. After tuning (novelty conditioning + tempo-octave folding), accuracy improved substantially on the same batch, but Phase 1F is still **not yet at the 88% (±2 BPM) target**.
+
+### Update (2025-12-18): 200-track tuning (novelty weighting)
+
+We added **configurable novelty mixing** for the tempogram novelty curve (spectral / energy / HFC) and validated on a 200-track batch.
+
+- **Baseline (200 tracks)**: `validation_results_20251218_082236.csv`
+  - Stratum **±2 BPM**: **53.5%**
+  - Stratum **MAE**: **25.21 BPM**
+- **Best run so far (200 tracks)**: `validation_results_20251218_083250.csv`
+  - Flags: `--novelty-w-spectral 0.30 --novelty-w-energy 0.35 --novelty-w-hfc 0.35`
+  - Stratum **±2 BPM**: **54.0%**
+  - Stratum **MAE**: **23.61 BPM**
+
+Net: **+0.5% absolute** at ±2 BPM and **-1.6 BPM MAE** on this batch.
 
 ---
 
@@ -48,18 +62,18 @@ From repo root:
 1. Build:
    - `cargo build --release --example analyze_file`
 2. Create a new batch:
-   - `python validation/prepare_test_batch.py --num-tracks 30`
+   - `python -m validation.tools.prepare_test_batch --num-tracks 30`
 3. Run validation:
-   - `python validation/run_validation.py`
+   - `python -m validation.tools.run_validation`
 4. Summarize results:
-   - `python validation/analyze_results.py`
+   - `python -m validation.analysis.analyze_results`
 
 Optional (A/B modes used during tuning):
-- Legacy-only BPM (Phase 1B): `python validation/run_validation.py --force-legacy-bpm`
-- Disable preprocessing: `python validation/run_validation.py --no-preprocess`
-- Disable onset consensus: `python validation/run_validation.py --no-onset-consensus`
-- Enable BPM fusion validator: `python validation/run_validation.py --bpm-fusion`
-- Ratio bucket analysis: `python validation/analyze_ratio_buckets.py --file <results_csv>`
+- Legacy-only BPM (Phase 1B): `python -m validation.tools.run_validation --force-legacy-bpm`
+- Disable preprocessing: `python -m validation.tools.run_validation --no-preprocess`
+- Disable onset consensus: `python -m validation.tools.run_validation --no-onset-consensus`
+- Enable BPM fusion validator: `python -m validation.tools.run_validation --bpm-fusion`
+- Ratio bucket analysis: `python -m validation.analysis.analyze_ratio_buckets --file <results_csv>`
 
 ---
 
@@ -75,7 +89,7 @@ Optional (A/B modes used during tuning):
 
 ### Distribution Notes (Current Baseline)
 
-From `validation/analyze_results.py` on the baseline results:
+From `validation.analysis.analyze_results` on the baseline results:
 
 - **<5 BPM**: 19
 - **5–20 BPM**: 1

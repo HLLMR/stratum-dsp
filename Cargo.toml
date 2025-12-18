@@ -15,8 +15,6 @@ readme = "README.md"
 symphonia = { version = "0.5", features = ["all"] }
 
 # Math & DSP
-ndarray = "0.15"
-ndarray-linalg = "0.15"
 rustfft = "6.2"
 
 # ML (Phase 2, optional)

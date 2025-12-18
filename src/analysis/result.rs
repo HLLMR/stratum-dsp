@@ -240,6 +240,22 @@ pub struct AnalysisMetadata {
     /// Optional: tempogram candidate list (top-N) for diagnostics.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tempogram_candidates: Option<Vec<TempoCandidateDebug>>,
+
+    /// Tempogram multi-resolution escalation was triggered for this track (ambiguous base estimate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempogram_multi_res_triggered: Option<bool>,
+
+    /// Tempogram multi-resolution result was selected over the base single-resolution estimate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempogram_multi_res_used: Option<bool>,
+
+    /// Tempogram percussive-only fallback was triggered (ambiguous estimate + HPSS enabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempogram_percussive_triggered: Option<bool>,
+
+    /// Tempogram percussive-only fallback was selected over the current estimate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempogram_percussive_used: Option<bool>,
 }
 
 // Re-export for convenience

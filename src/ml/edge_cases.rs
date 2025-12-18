@@ -1,4 +1,6 @@
-//! Edge case detection and correction
+//! Edge case detection and correction (Phase 2)
+//!
+//! Feature-gated behind `--features ml`.
 
 use crate::analysis::result::AnalysisResult;
 
@@ -12,8 +14,8 @@ use crate::analysis::result::AnalysisResult;
 ///
 /// Vector of detected edge case flags
 pub fn detect_edge_cases(_result: &AnalysisResult) -> Vec<String> {
-    // TODO: Implement edge case detection
     log::debug!("Detecting edge cases");
-    vec![]
+    // Phase 2 placeholder: return no flags until edge-case classifier is implemented.
+    Vec::new()
 }
 

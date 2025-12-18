@@ -36,6 +36,144 @@ use crate::error::AnalysisError;
 /// Numerical stability epsilon
 const EPSILON: f32 = 1e-10;
 
+fn validate_spectrogram(magnitude_spec_frames: &[Vec<f32>]) -> Result<usize, AnalysisError> {
+    if magnitude_spec_frames.is_empty() || magnitude_spec_frames.len() < 2 {
+        return Ok(0);
+    }
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(format!(
+                "Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                n_bins, i, frame.len()
+            )));
+        }
+    }
+    Ok(n_bins)
+}
+
+fn mel(f_hz: f32) -> f32 {
+    // HTK mel scale
+    2595.0 * (1.0 + (f_hz / 700.0)).log10()
+}
+
+fn inv_mel(mel_val: f32) -> f32 {
+    700.0 * (10.0f32.powf(mel_val / 2595.0) - 1.0)
+}
+
+#[derive(Debug, Clone)]
+struct MelFilterbank {
+    n_mels: usize,
+    // For each FFT bin, list of (mel_idx, weight) contributions (usually <= 2).
+    bin_contribs: Vec<Vec<(usize, f32)>>,
+}
+
+impl MelFilterbank {
+    fn new(
+        sample_rate: u32,
+        n_bins: usize,
+        n_mels: usize,
+        fmin_hz: f32,
+        fmax_hz: f32,
+    ) -> Result<Self, AnalysisError> {
+        if sample_rate == 0 {
+            return Err(AnalysisError::InvalidInput("Sample rate must be > 0".to_string()));
+        }
+        if n_bins < 2 {
+            return Err(AnalysisError::InvalidInput("Not enough FFT bins".to_string()));
+        }
+        let n_mels = n_mels.max(4);
+        let nyquist = sample_rate as f32 * 0.5;
+        let fmin = fmin_hz.max(0.0).min(nyquist.max(1.0));
+        let mut fmax = fmax_hz;
+        if !(fmax.is_finite() && fmax > 0.0) {
+            fmax = nyquist;
+        }
+        let fmax = fmax.min(nyquist).max(fmin + 1.0);
+
+        // Infer FFT size from rFFT bins: n_bins = fft_size/2 + 1
+        let fft_size = (n_bins - 1) * 2;
+        let freq_resolution = sample_rate as f32 / fft_size as f32;
+
+        let mel_min = mel(fmin);
+        let mel_max = mel(fmax);
+        let step = (mel_max - mel_min) / (n_mels + 1) as f32;
+
+        let mut mel_points = Vec::with_capacity(n_mels + 2);
+        for i in 0..(n_mels + 2) {
+            mel_points.push(mel_min + step * i as f32);
+        }
+
+        let hz_points: Vec<f32> = mel_points.into_iter().map(inv_mel).collect();
+        let mut bin_points: Vec<usize> = hz_points
+            .iter()
+            .map(|&hz| ((hz / freq_resolution).round() as isize).clamp(0, (n_bins - 1) as isize) as usize)
+            .collect();
+
+        // Ensure strictly increasing to avoid degenerate triangles.
+        for i in 1..bin_points.len() {
+            if bin_points[i] <= bin_points[i - 1] {
+                bin_points[i] = (bin_points[i - 1] + 1).min(n_bins - 1);
+            }
+        }
+
+        let mut bin_contribs: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n_bins];
+        for m in 0..n_mels {
+            let left = bin_points[m];
+            let center = bin_points[m + 1];
+            let right = bin_points[m + 2];
+            if !(left < center && center < right) {
+                continue;
+            }
+
+            // Rising slope: left..center
+            for b in left..=center {
+                let w = if b == left {
+                    0.0
+                } else {
+                    (b as f32 - left as f32) / (center as f32 - left as f32)
+                };
+                if w > 0.0 {
+                    bin_contribs[b].push((m, w));
+                }
+            }
+            // Falling slope: center..right
+            for b in center..=right {
+                let w = if b == right {
+                    0.0
+                } else {
+                    (right as f32 - b as f32) / (right as f32 - center as f32)
+                };
+                if w > 0.0 {
+                    bin_contribs[b].push((m, w));
+                }
+            }
+        }
+
+        Ok(Self { n_mels, bin_contribs })
+    }
+
+    fn apply_logmag(&self, mag_frame: &[f32]) -> Vec<f32> {
+        let mut mel = vec![0.0f32; self.n_mels];
+        for (b, &x) in mag_frame.iter().enumerate() {
+            if b >= self.bin_contribs.len() {
+                break;
+            }
+            let v = (1.0 + x.max(0.0)).ln();
+            if v <= 0.0 {
+                continue;
+            }
+            for &(m, w) in &self.bin_contribs[b] {
+                mel[m] += v * w;
+            }
+        }
+        mel
+    }
+}
+
 /// Extract spectral flux novelty curve from magnitude spectrogram
 ///
 /// Computes frame-to-frame spectral changes, emphasizing positive differences
@@ -179,21 +317,9 @@ pub fn superflux_novelty(
         return Ok(Vec::new());
     }
 
-    let n_bins = magnitude_spec_frames[0].len();
+    let n_bins = validate_spectrogram(magnitude_spec_frames)?;
     if n_bins == 0 {
-        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
-    }
-    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
-        if frame.len() != n_bins {
-            return Err(AnalysisError::InvalidInput(
-                format!(
-                    "Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
-                    n_bins,
-                    i,
-                    frame.len()
-                ),
-            ));
-        }
+        return Ok(Vec::new());
     }
 
     let k = max_filter_bins.max(1);
@@ -216,6 +342,72 @@ pub fn superflux_novelty(
             let end = (b + k + 1).min(n_bins);
             let mut prev_max = 0.0f32;
             for v in &prev[start..end] {
+                prev_max = prev_max.max(*v);
+            }
+            let diff = (curr[b] - prev_max).max(0.0);
+            sum += diff * diff;
+        }
+        flux.push(sum.sqrt());
+    }
+
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for v in &mut flux {
+            *v /= max_flux;
+        }
+    }
+    Ok(flux)
+}
+
+/// Extract SuperFlux novelty curve from a **frequency sub-band** of a magnitude spectrogram.
+///
+/// This is the same algorithm as `superflux_novelty`, but it only uses bins in
+/// `[bin_start, bin_end)` (clamped to the frame width). This supports multi-band novelty
+/// fusion without having to allocate band-sliced spectrograms.
+pub fn superflux_novelty_band(
+    magnitude_spec_frames: &[Vec<f32>],
+    max_filter_bins: usize,
+    bin_start: usize,
+    bin_end: usize,
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() || magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let n_bins = validate_spectrogram(magnitude_spec_frames)?;
+    if n_bins == 0 {
+        return Ok(Vec::new());
+    }
+
+    let start = bin_start.min(n_bins);
+    let end = bin_end.min(n_bins);
+    if end <= start + 1 {
+        return Ok(Vec::new());
+    }
+
+    let k = max_filter_bins.max(1);
+
+    // Precompute log-compressed frames (full frame, reused for band lookup).
+    let mut log_frames: Vec<Vec<f32>> = Vec::with_capacity(magnitude_spec_frames.len());
+    for frame in magnitude_spec_frames {
+        let lf: Vec<f32> = frame.iter().map(|&x| (1.0 + x.max(0.0)).ln()).collect();
+        log_frames.push(lf);
+    }
+
+    let mut flux = Vec::with_capacity(log_frames.len().saturating_sub(1));
+    for i in 1..log_frames.len() {
+        let prev = &log_frames[i - 1];
+        let curr = &log_frames[i];
+
+        let mut sum = 0.0f32;
+        for b in start..end {
+            let local_start = b.saturating_sub(k).max(start);
+            let local_end = (b + k + 1).min(end);
+            let mut prev_max = 0.0f32;
+            for v in &prev[local_start..local_end] {
                 prev_max = prev_max.max(*v);
             }
             let diff = (curr[b] - prev_max).max(0.0);
@@ -317,6 +509,125 @@ pub fn energy_flux_novelty(
     Ok(flux)
 }
 
+/// Extract a log-mel SuperFlux-style novelty curve.
+///
+/// This computes mel-band energies from log-compressed magnitudes, then applies the same
+/// max-filtered-reference differencing as SuperFlux (but in mel space). In practice,
+/// mel aggregation can reduce spurious bin-level variance and improve robustness in
+/// dense harmonic material.
+pub fn mel_superflux_novelty(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+    n_mels: usize,
+    fmin_hz: f32,
+    fmax_hz: f32,
+    max_filter_mels: usize,
+) -> Result<Vec<f32>, AnalysisError> {
+    let n_bins = validate_spectrogram(magnitude_spec_frames)?;
+    if n_bins == 0 {
+        return Ok(Vec::new());
+    }
+
+    let fb = MelFilterbank::new(sample_rate, n_bins, n_mels, fmin_hz, fmax_hz)?;
+    let k = max_filter_mels.max(1);
+
+    // Precompute mel frames
+    let mut mel_frames: Vec<Vec<f32>> = Vec::with_capacity(magnitude_spec_frames.len());
+    for frame in magnitude_spec_frames {
+        mel_frames.push(fb.apply_logmag(frame));
+    }
+
+    let mut flux = Vec::with_capacity(mel_frames.len().saturating_sub(1));
+    for i in 1..mel_frames.len() {
+        let prev = &mel_frames[i - 1];
+        let curr = &mel_frames[i];
+        let n = prev.len().min(curr.len());
+        if n == 0 {
+            continue;
+        }
+
+        let mut sum = 0.0f32;
+        for b in 0..n {
+            let start = b.saturating_sub(k);
+            let end = (b + k + 1).min(n);
+            let mut prev_max = 0.0f32;
+            for v in &prev[start..end] {
+                prev_max = prev_max.max(*v);
+            }
+            let diff = (curr[b] - prev_max).max(0.0);
+            sum += diff * diff;
+        }
+        flux.push(sum.sqrt());
+    }
+
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for v in &mut flux {
+            *v /= max_flux;
+        }
+    }
+    Ok(flux)
+}
+
+/// Band-limited variant of `energy_flux_novelty` using bins `[bin_start, bin_end)`.
+pub fn energy_flux_novelty_band(
+    magnitude_spec_frames: &[Vec<f32>],
+    bin_start: usize,
+    bin_end: usize,
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() || magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!(
+                    "Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                    n_bins,
+                    i,
+                    frame.len()
+                ),
+            ));
+        }
+    }
+
+    let start = bin_start.min(n_bins);
+    let end = bin_end.min(n_bins);
+    if end <= start + 1 {
+        return Ok(Vec::new());
+    }
+
+    let energies: Vec<f32> = magnitude_spec_frames
+        .iter()
+        .map(|frame| frame[start..end].iter().map(|&x| x * x).sum())
+        .collect();
+
+    let mut flux = Vec::with_capacity(energies.len().saturating_sub(1));
+    for i in 1..energies.len() {
+        flux.push((energies[i] - energies[i - 1]).max(0.0));
+    }
+
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for v in &mut flux {
+            *v /= max_flux;
+        }
+    }
+    Ok(flux)
+}
+
 /// Extract high-frequency content (HFC) novelty curve from magnitude spectrogram
 ///
 /// Computes weighted sum emphasizing high frequencies, making this method
@@ -409,6 +720,74 @@ pub fn hfc_novelty(
     Ok(flux)
 }
 
+/// Band-limited variant of `hfc_novelty` using bins `[bin_start, bin_end)`.
+///
+/// Note: We retain the **absolute** bin index weighting \(k * |X[k]|^2\) inside the band
+/// (not a reindexed 0..N band), to keep the interpretation consistent across bands.
+pub fn hfc_novelty_band(
+    magnitude_spec_frames: &[Vec<f32>],
+    bin_start: usize,
+    bin_end: usize,
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() || magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!(
+                    "Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                    n_bins,
+                    i,
+                    frame.len()
+                ),
+            ));
+        }
+    }
+
+    let start = bin_start.min(n_bins);
+    let end = bin_end.min(n_bins);
+    if end <= start + 1 {
+        return Ok(Vec::new());
+    }
+
+    let hfc_values: Vec<f32> = magnitude_spec_frames
+        .iter()
+        .map(|frame| {
+            frame[start..end]
+                .iter()
+                .enumerate()
+                .map(|(i, &mag)| {
+                    let k = (start + i) as f32;
+                    k * mag * mag
+                })
+                .sum()
+        })
+        .collect();
+
+    let mut flux = Vec::with_capacity(hfc_values.len().saturating_sub(1));
+    for i in 1..hfc_values.len() {
+        flux.push((hfc_values[i] - hfc_values[i - 1]).max(0.0));
+    }
+
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for v in &mut flux {
+            *v /= max_flux;
+        }
+    }
+    Ok(flux)
+}
+
 /// Combine multiple novelty curves with weighted voting
 ///
 /// Combines spectral flux, energy flux, and HFC novelty curves into a single
@@ -441,50 +820,69 @@ pub fn combined_novelty(
     energy: &[f32],
     hfc: &[f32],
 ) -> Vec<f32> {
+    combined_novelty_with_params(spectral, energy, hfc, 0.5, 0.3, 0.2, 16, 5)
+}
+
+/// Combine multiple novelty curves with configurable weights and conditioning.
+///
+/// This is a tuning hook: novelty weighting and conditioning strongly affects whether the
+/// novelty emphasizes the beat-level pulse vs subdivisions (hi-hats) vs harmonic motion.
+pub fn combined_novelty_with_params(
+    spectral: &[f32],
+    energy: &[f32],
+    hfc: &[f32],
+    w_spectral: f32,
+    w_energy: f32,
+    w_hfc: f32,
+    local_mean_window: usize,
+    smooth_window: usize,
+) -> Vec<f32> {
     // Find minimum length (all curves should be same length, but be safe)
     let min_len = spectral.len().min(energy.len()).min(hfc.len());
-    
+
     if min_len == 0 {
         return Vec::new();
     }
-    
-    // Weights: spectral flux is most important for BPM detection (per Klapuri et al. 2006)
-    const WEIGHT_SPECTRAL: f32 = 0.5;
-    const WEIGHT_ENERGY: f32 = 0.3;
-    const WEIGHT_HFC: f32 = 0.2;
-    const WEIGHT_SUM: f32 = WEIGHT_SPECTRAL + WEIGHT_ENERGY + WEIGHT_HFC;
-    
+
+    let ws = w_spectral.max(0.0);
+    let we = w_energy.max(0.0);
+    let wh = w_hfc.max(0.0);
+    let wsum = (ws + we + wh).max(EPSILON);
+
     let mut combined = Vec::with_capacity(min_len);
-    
     for i in 0..min_len {
         let spectral_val = spectral.get(i).copied().unwrap_or(0.0);
         let energy_val = energy.get(i).copied().unwrap_or(0.0);
         let hfc_val = hfc.get(i).copied().unwrap_or(0.0);
-        
+
         // Weighted average
-        let weighted_sum = (spectral_val * WEIGHT_SPECTRAL +
-                           energy_val * WEIGHT_ENERGY +
-                           hfc_val * WEIGHT_HFC) / WEIGHT_SUM;
-        
+        let weighted_sum = (spectral_val * ws + energy_val * we + hfc_val * wh) / wsum;
         combined.push(weighted_sum);
     }
-    
+
     // Normalize to [0, 1] (should already be normalized, but ensure it)
     normalize_in_place(&mut combined);
 
-    // Standard novelty conditioning (helps reduce metrical-level ambiguity):
-    // 1) subtract a local mean (high-pass in time)
-    // 2) half-wave rectify
-    // 3) optional smoothing
-    //
-    // This is a common practical step in tempo estimation pipelines that work with novelty functions.
-    // It suppresses slow drift and helps de-emphasize dense subdivisions vs beat-level periodicity.
-    combined = local_mean_subtract(&combined, 16);
-    smooth_moving_average_in_place(&mut combined, 5);
+    // Conditioning:
+    // - local mean subtraction is effectively a high-pass in time, with half-wave rectification
+    // - smoothing stabilizes the novelty and can reduce spurious sub-beat transients
+    if local_mean_window > 1 {
+        combined = local_mean_subtract(&combined, local_mean_window);
+    }
+    if smooth_window > 1 {
+        smooth_moving_average_in_place(&mut combined, smooth_window);
+    }
     normalize_in_place(&mut combined);
 
-    log::debug!("Combined novelty (conditioned): {} values",
-                combined.len());
+    log::debug!(
+        "Combined novelty (conditioned): {} values (w=[{:.2},{:.2},{:.2}], local_mean={}, smooth={})",
+        combined.len(),
+        ws,
+        we,
+        wh,
+        local_mean_window,
+        smooth_window
+    );
 
     combined
 }

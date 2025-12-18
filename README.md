@@ -1,35 +1,23 @@
 # Stratum DSP
 
-A professional-grade audio analysis engine for DJ applications, providing accurate BPM detection, key detection, and beat tracking in pure Rust.
+Stratum DSP is a Rust audio analysis engine aimed at DJ/library workflows:
 
-## Features
+- **Tempo (BPM)** + confidence
+- **Key** (musical name + **numerical** DJ notation like `1A/1B`)
+- **Beat grid** + stability
 
-- **BPM Detection**: Tempogram-based detection (Phase 1F - implemented, tuning in progress)
-  - Legacy (Phase 1B): Autocorrelation + comb filterbank (kept as fallback; deprecate after validation)
-  - Tempogram (Phase 1F): Novelty curve + FFT tempogram + Autocorrelation tempogram + selection logic
-  - Current validation status: ⚠️ **Not yet validated** (current baseline recorded in `docs/progress-reports/PHASE_1F_VALIDATION.md`)
-- **Key Detection**: Chroma-based analysis with Krumhansl-Kessler template matching
-- **Beat Tracking**: HMM-based beat grid generation with tempo drift correction
-- **ML Refinement**: Optional ONNX model for edge case correction (Phase 2)
+The library API is sample-based (`analyze_audio(samples, sample_rate, ...)`). File decoding is provided via the example CLIs.
 
-## Status
+## What’s implemented today
 
-✅ **Phase 1A Complete** - Preprocessing & Onset Detection implemented and tested  
-⚠️ **Phase 1B Complete** - Period Estimation implemented but requires pivot (30% accuracy limitation)  
-✅ **Phase 1C Complete** - Beat Tracking (HMM Viterbi) implemented and tested  
-✅ **Phase 1D Complete** - Key Detection (Chroma + Templates) implemented and tested  
-✅ **Phase 1E Complete** - Integration & Tuning with confidence scoring  
-⚠️ **Phase 1F Implemented (Not Validated)** - Tempogram BPM Pivot (critical fix - tuning required)
+- **BPM**: novelty curve → dual tempogram (FFT + autocorrelation) with metrical-family selection and optional multi-resolution escalation.
+  - Primary reference: Grosche et al. (2012) Fourier tempogram (see `docs/literature/grosche_2012_tempogram.md`).
+- **Key**: chroma → template matching (Krumhansl & Kessler, 1982).
+- **Preprocessing**: Peak/RMS/LUFS normalization (ITU-R BS.1770-4) + silence trimming.
+- **Beat grid**: HMM-based beat tracking + stability.
+- **Validation tooling**: FMA Small harness under `validation/`.
 
-Target accuracy:
-- BPM: 88% (±2 BPM tolerance) - **Requires Phase 1F tempogram pivot**
-- Key: 77% (exact match)
-
-**Current Progress**: 62.5% (5/8 weeks) - Classical DSP pipeline complete, **tempogram pivot required before Phase 2**
-
-**Critical**: Phase 1F tempogram is integrated, but validation remains below target (dominant error: metrical-level / harmonic-family selection). See `docs/progress-reports/PHASE_1F_VALIDATION.md` and `docs/progress-reports/TEMPOGRAM_PIVOT_EVALUATION.md`.
-
-## Quick Start
+## Quick start (library)
 
 Add to your `Cargo.toml`:
 
@@ -38,138 +26,56 @@ Add to your `Cargo.toml`:
 stratum-dsp = { git = "https://github.com/HLLMR/stratum-dsp" }
 ```
 
-Basic usage:
+Example:
 
 ```rust
-use stratum_dsp::{analyze_audio, AnalysisConfig, compute_confidence};
+use stratum_dsp::{analyze_audio, compute_confidence, AnalysisConfig};
 
-// Load audio samples (mono, f32, normalized)
-let samples: Vec<f32> = vec![]; // Your audio data
-let sample_rate = 44100;
+let samples: Vec<f32> = vec![]; // mono, f32 in [-1, 1]
+let sample_rate = 44_100;
 
-// Analyze
 let result = analyze_audio(&samples, sample_rate, AnalysisConfig::default())?;
+let conf = compute_confidence(&result);
 
-// Compute comprehensive confidence scores
-let confidence = compute_confidence(&result);
-
-println!("BPM: {:.2} (confidence: {:.2})", result.bpm, confidence.bpm_confidence);
-println!("Key: {} (confidence: {:.2}, clarity: {:.2})", 
-         result.key.name(), 
-         confidence.key_confidence,
-         result.key_clarity);
-println!("Overall confidence: {:.2} ({})", 
-         confidence.overall_confidence, 
-         confidence.confidence_level());
+println!("BPM: {:.2} (conf={:.2})", result.bpm, conf.bpm_confidence);
+println!("Key: {} (conf={:.2})", result.key.name(), conf.key_confidence);
 # Ok::<(), stratum_dsp::AnalysisError>(())
 ```
 
-## Architecture
+## Example CLIs
 
-The analysis pipeline follows this flow:
+- **Single file**: `examples/analyze_file.rs`
 
+```bash
+cargo build --release --example analyze_file
+target/release/examples/analyze_file --json <audio_file>
 ```
-Audio Input → Preprocessing → Feature Extraction → Analysis → ML Refinement → Output
+
+- **Batch (parallel, CPU-1 workers)**: `examples/analyze_batch.rs`
+
+```bash
+cargo build --release --example analyze_batch
+target/release/examples/analyze_batch --jobs 7 <file1> <file2> ...
 ```
 
-For the authoritative, step-by-step processing logic and decision points (including legacy fallbacks), see `PIPELINE.md`.
+## Validation (FMA Small)
 
-### Modules
+See `validation/README.md`. Canonical commands:
 
-- **Preprocessing**: Normalization, silence detection, channel mixing
-- **Onset Detection**: Energy flux, spectral flux, HFC, HPSS with consensus voting
-- **Period Estimation**: 
-  - Current: Autocorrelation + comb filterbank (30% accuracy - to be deprecated after validation)
-  - New: Dual tempogram (FFT + Autocorrelation) with multi-resolution validation (85-92% accuracy target)
-  - Future: Hybrid approach (FFT coarse + autocorr fine) documented for enhancement
-- **Beat Tracking**: HMM Viterbi algorithm + Bayesian tempo tracking
-- **Chroma Extraction**: FFT → 12-semitone chroma vectors
-- **Key Detection**: Krumhansl-Kessler template matching (24 keys)
-- **Confidence Scoring**: Comprehensive confidence computation for all components
-- **ML Refinement**: Optional ONNX model for edge case correction (Phase 2)
+```bash
+python -m validation.tools.prepare_test_batch --num-tracks 200
+python -m validation.tools.run_validation --jobs 15
+python -m validation.analysis.analyze_results
+```
 
-## Development Roadmap
+## Documentation map
 
-### Phase 1: Classical DSP (Weeks 1-5)
-- [x] **Phase 1A**: Preprocessing & Onset Detection ✅
-  - [x] Normalization (peak, RMS, LUFS with K-weighting)
-  - [x] Silence detection and trimming
-  - [x] Channel mixing (stereo to mono)
-  - [x] Onset detection (energy flux, spectral flux, HFC, HPSS)
-  - [x] Consensus voting algorithm
-  - [x] 80 tests (75 unit + 5 integration)
-- [x] **Phase 1B**: Period Estimation (BPM Detection) ✅ → ⚠️ PIVOT REQUIRED
-  - [x] Autocorrelation-based BPM estimation (FFT-accelerated)
-  - [x] Comb filterbank BPM estimation
-  - [x] Peak picking and candidate filtering
-  - [x] Octave error handling
-  - [x] Coarse-to-fine search optimization (5-15ms vs 10-30ms)
-  - [x] Adaptive tolerance window (BPM-dependent)
-  - [x] 32 unit tests + integration tests
-  - ⚠️ **Limitation**: Frame-by-frame analysis caps accuracy at ~30%
-- [ ] **Phase 1F**: Tempogram BPM Pivot ⏳
-  - [x] Novelty curve (spectral flux, energy flux, HFC)
-  - [x] Autocorrelation tempogram (test each BPM hypothesis)
-  - [x] FFT tempogram (frequency-domain analysis)
-  - [x] Comparison & selection logic (best method or ensemble)
-  - [x] Multi-resolution validation (3 hop sizes)
-  - [x] Integration and migration (tempogram is primary, legacy fallback retained)
-  - [ ] A/B testing framework (old vs new methods)
-  - [ ] Validation/tuning: metrical-level selection (tempo octave)
-  - [ ] Validation/tuning: novelty conditioning + confidence calibration
-  - [ ] Deprecation plan for old methods (after validation)
-  - **Target**: 85-92% accuracy (vs 30% current) - using best of both tempogram methods
-- [x] **Phase 1C**: Beat Tracking (HMM) ✅
-  - [x] HMM Viterbi algorithm for beat sequence tracking
-  - [x] Bayesian tempo tracking for variable-tempo tracks
-  - [x] Variable tempo detection and automatic refinement
-  - [x] Time signature detection (4/4, 3/4, 6/8)
-  - [x] Beat grid generation with downbeat detection
-  - [x] Grid stability calculation
-  - [x] 44 unit tests + integration tests with <50ms jitter validation
-- [x] **Phase 1D**: Key Detection (Chroma + Templates) ✅
-  - [x] STFT-based chroma extraction with soft mapping
-  - [x] Chroma normalization (L2 normalization, sharpening)
-  - [x] Temporal chroma smoothing (median and average filtering)
-  - [x] Krumhansl-Kessler templates (24 keys: 12 major + 12 minor)
-  - [x] Template matching algorithm with confidence scoring
-  - [x] Key clarity computation (tonal strength estimation)
-  - [x] Key change detection (segment-based analysis)
-  - [x] Musical notation display (e.g., "C", "Am", "F#", "D#m")
-  - [x] DJ standard numerical format (1A, 2B, etc.) without trademarked names
-  - [x] 40 unit tests + integration tests with known key fixtures
-  - [x] Performance: ~17-28ms for 30s track (2x faster than target)
-- [x] **Phase 1E**: Integration & Tuning ✅
-  - [x] Comprehensive confidence scoring system
-  - [x] Result aggregation and error handling refinement
-  - [x] Full pipeline integration in `analyze_audio()`
-  - [x] Key clarity added to `AnalysisResult`
-  - [x] Confidence helper methods (`is_high_confidence()`, etc.)
-  - [x] 8 new confidence tests + all existing tests passing (219+ total)
-  - [x] Performance: ~75-150ms for 30s track (3-6x faster than 500ms target)
-
-### Phase 2: ML Refinement (Weeks 6-8)
-- [ ] Data collection (1000+ tracks)
-- [ ] ONNX model training
-- [ ] ML inference integration
-- [ ] Accuracy validation
-
-### Phase 3: Release (Week 8)
-- [ ] Documentation
-- [ ] Performance optimization
-- [ ] Publish to crates.io
-
-## Performance Targets
-
-- **Speed**: <500ms per 30s track (single-threaded)
-- **Accuracy**: 88% BPM, 77% key detection
-- **Memory**: Efficient streaming processing
+- **Pipeline (authoritative)**: `PIPELINE.md`
+- **Dev workflow (concise)**: `DEVELOPMENT.md`
+- **Roadmap (high-level only)**: `ROADMAP.md`
+- **Progress reports / deep history**: `docs/progress-reports/`
 
 ## License
 
-Dual-licensed under MIT OR Apache-2.0
-
-## Contributing
-
-Contributions welcome! See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guidelines, algorithms, and implementation details.
+Dual-licensed under MIT OR Apache-2.0.
 

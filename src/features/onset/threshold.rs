@@ -2,6 +2,9 @@
 //!
 //! Provides robust thresholding methods including median + MAD (Median Absolute Deviation)
 //! as recommended by McFee & Ellis (2014) for improved onset detection robustness.
+//!
+//! NOTE: This module is currently **not wired into the main pipeline**; it is kept as a cited
+//! reference implementation for future onset-threshold tuning work.
 
 use crate::error::AnalysisError;
 

@@ -9,8 +9,8 @@ This lets us distinguish:
   - "generation problem" (GT not even among candidates)
 
 Usage examples:
-  python validation/diagnose_candidates.py --results-csv ..\\validation-data\\results\\validation_results_20251217_193119.csv
-  python validation/diagnose_candidates.py --results-csv ..\\validation-data\\results\\validation_results_20251217_193119.csv --top-n 15 --only-misses
+  python -m validation.analysis.diagnose_candidates --results-csv ..\\validation-data\\results\\validation_results_20251217_193119.csv
+  python -m validation.analysis.diagnose_candidates --results-csv ..\\validation-data\\results\\validation_results_20251217_193119.csv --top-n 15 --only-misses
 """
 
 from __future__ import annotations
@@ -23,6 +23,12 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+if __package__ in (None, ""):
+    # Allow running as a script: `python validation/analysis/diagnose_candidates.py`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from validation._paths import find_repo_root, resolve_data_path
 
 
 @dataclass
@@ -98,7 +104,8 @@ def main() -> int:
     ap.add_argument("--only-misses", action="store_true", help="Only re-run tracks where bpm_error > tol")
     args = ap.parse_args()
 
-    data_path = Path(args.data_path)
+    repo_root = find_repo_root()
+    data_path = resolve_data_path(args.data_path, repo_root)
     results_dir = data_path / "results"
     results_csv = Path(args.results_csv)
     if not results_csv.exists():
@@ -108,11 +115,22 @@ def main() -> int:
     if args.binary:
         binary_path = Path(args.binary)
     else:
-        repo_root = Path(__file__).parent.parent
         if sys.platform == "win32":
-            binary_path = repo_root / "target" / "release" / "examples" / "analyze_file.exe"
+            candidates = [
+                repo_root / "target" / "release" / "examples" / "analyze_file.exe",
+                repo_root / "target_alt" / "release" / "examples" / "analyze_file.exe",
+                repo_root / "target-alt" / "release" / "examples" / "analyze_file.exe",
+                repo_root / "target" / "debug" / "examples" / "analyze_file.exe",
+            ]
+            binary_path = next((p for p in candidates if p.exists()), candidates[0])
         else:
-            binary_path = repo_root / "target" / "release" / "examples" / "analyze_file"
+            candidates = [
+                repo_root / "target" / "release" / "examples" / "analyze_file",
+                repo_root / "target_alt" / "release" / "examples" / "analyze_file",
+                repo_root / "target-alt" / "release" / "examples" / "analyze_file",
+                repo_root / "target" / "debug" / "examples" / "analyze_file",
+            ]
+            binary_path = next((p for p in candidates if p.exists()), candidates[0])
 
     if not binary_path.exists():
         print(f"ERROR: analyze_file binary not found at {binary_path}")
