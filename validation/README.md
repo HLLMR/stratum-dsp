@@ -133,6 +133,10 @@ Contains validation results for each track:
 - `key_gt`: Ground truth key
 - `key_pred`: Predicted key
 - `key_match`: "YES" if keys match, "NO" otherwise
+- `key_ref`: which reference was used for `key_match`:
+  - `GT` if key ground truth exists in metadata
+  - `TAG` if GT is missing but the file tag contains a key (fallback agreement mode)
+  - `N/A` if neither is available
 - `key_tag`: TAG key (from ID3 TKEY / common TXXX fallbacks), if present
 - `key_tag_match`: "YES" if TAG key matches ground truth, "NO" otherwise
 - `bpm_confidence`: BPM confidence score

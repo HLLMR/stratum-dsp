@@ -43,6 +43,22 @@ def analyze_file(results_file: str) -> None:
     print(f"Stratum MAE: {statistics.mean(errors):.2f} BPM")
     if tag_errors:
         print(f"TAG MAE: {statistics.mean(tag_errors):.2f} BPM (n={len(tag_errors)})")
+
+    # Key summary (GT or TAG reference, depending on key_ref)
+    if rows and "key_match" in rows[0]:
+        key_rows = [r for r in rows if r.get("key_match") in ("YES", "NO")]
+        if key_rows:
+            ref_gt = [r for r in key_rows if r.get("key_ref") == "GT"]
+            ref_tag = [r for r in key_rows if r.get("key_ref") == "TAG"]
+            if ref_gt:
+                acc_gt = sum(1 for r in ref_gt if r["key_match"] == "YES") / len(ref_gt) * 100
+                print(f"Stratum Key accuracy vs GT: {acc_gt:.1f}% (n={len(ref_gt)})")
+            if ref_tag:
+                acc_tag = sum(1 for r in ref_tag if r["key_match"] == "YES") / len(ref_tag) * 100
+                print(f"Stratum Key agreement vs TAG: {acc_tag:.1f}% (n={len(ref_tag)})")
+        else:
+            # Preserve old behavior: many batches have no key GT.
+            pass
     print("\nAccuracy:")
     print(
         f"  Within ±2 BPM: {sum(1 for e in errors if e <= 2)}/{len(errors)} "

@@ -442,9 +442,22 @@ def main():
         key_pred_norm = normalize_key(pred_key)
         key_tag_norm = normalize_key(key_tag)
 
+        # Key comparison reference:
+        # - Prefer GT if available.
+        # - Otherwise, fall back to TAG as a baseline reference (requested), so we can track
+        #   Stratum-vs-TAG agreement even when GT is missing.
+        key_ref = "N/A"
         if key_gt_norm:
+            key_ref = "GT"
             key_match = "YES" if key_pred_norm == key_gt_norm else "NO"
-            key_tag_match = "YES" if key_tag_norm == key_gt_norm else "NO" if key_tag_norm else "NO"
+            key_tag_match = (
+                "YES" if key_tag_norm == key_gt_norm else "NO" if key_tag_norm else "NO"
+            )
+        elif key_tag_norm:
+            key_ref = "TAG"
+            key_match = "YES" if key_pred_norm == key_tag_norm else "NO"
+            # TAG is the reference here, so this field is not meaningful.
+            key_tag_match = "N/A"
         else:
             key_match = "N/A"
             key_tag_match = "N/A"
@@ -459,6 +472,7 @@ def main():
             "bpm_tag_error": bpm_tag_error,
             "key_gt": key_gt,
             "key_pred": pred_key,
+            "key_ref": key_ref,
             "key_match": key_match,
             "key_tag": key_tag,
             "key_tag_match": key_tag_match,
@@ -470,9 +484,10 @@ def main():
         
         bpm_tag_str = f"{float(bpm_tag):.1f}" if bpm_tag is not None else "N/A"
         bpm_tag_err_str = f"{float(bpm_tag_error):.1f}" if bpm_tag is not None else "N/A"
+        key_ref_disp = key_ref if key_ref != "N/A" else "N/A"
         print(
             f"BPM: {pred_bpm:.1f} (error: {bpm_error:.1f}), TAG BPM: {bpm_tag_str} (error: {bpm_tag_err_str}), "
-            f"Key: {pred_key} ({key_match}), TAG Key: {key_tag or 'N/A'} ({key_tag_match})"
+            f"Key: {pred_key} ({key_match}, ref={key_ref_disp}), TAG Key: {key_tag or 'N/A'} ({key_tag_match})"
         )
     
     # Save results with timestamp
@@ -493,8 +508,10 @@ def main():
     if results:
         avg_bpm_error = sum(r["bpm_error"] for r in results) / len(results)
 
-        # Key ground truth may be missing; only compute accuracy if available
+        # Key reference can be GT (preferred) or TAG (fallback baseline when GT is missing).
         key_rows = [r for r in results if r.get("key_match") in ("YES", "NO")]
+        key_rows_ref_gt = [r for r in key_rows if r.get("key_ref") == "GT"]
+        key_rows_ref_tag = [r for r in key_rows if r.get("key_ref") == "TAG"]
         key_accuracy = (
             sum(1 for r in key_rows if r["key_match"] == "YES") / len(key_rows) * 100
             if key_rows
@@ -526,10 +543,14 @@ def main():
         print(f"Tracks tested: {len(results)}")
         print(f"Stratum BPM MAE: ±{avg_bpm_error:.2f}")
         print(f"Stratum BPM accuracy (±2 BPM): {bpm_accuracy_2:.1f}%")
-        if key_rows:
-            print(f"Stratum Key accuracy: {key_accuracy:.1f}%")
-        else:
-            print("Stratum Key accuracy: N/A (no key ground truth in batch)")
+        if key_rows_ref_gt:
+            acc_gt = sum(1 for r in key_rows_ref_gt if r["key_match"] == "YES") / len(key_rows_ref_gt) * 100
+            print(f"Stratum Key accuracy vs GT: {acc_gt:.1f}% (n={len(key_rows_ref_gt)})")
+        if key_rows_ref_tag:
+            acc_tag = sum(1 for r in key_rows_ref_tag if r["key_match"] == "YES") / len(key_rows_ref_tag) * 100
+            print(f"Stratum Key agreement vs TAG: {acc_tag:.1f}% (n={len(key_rows_ref_tag)})")
+        if not key_rows_ref_gt and not key_rows_ref_tag:
+            print("Stratum Key: N/A (no GT key and no TAG key available in batch)")
 
         if avg_bpm_tag_error is not None:
             print(f"TAG BPM MAE: ±{avg_bpm_tag_error:.2f} (n={len(tag_rows)})")
@@ -538,9 +559,9 @@ def main():
             print("TAG BPM: N/A (no TBPM found in tags for this batch)")
 
         if key_tag_accuracy is not None:
-            print(f"TAG Key accuracy: {key_tag_accuracy:.1f}% (n={len(key_tag_rows)})")
+            print(f"TAG Key accuracy vs GT: {key_tag_accuracy:.1f}% (n={len(key_tag_rows)})")
         else:
-            print("TAG Key accuracy: N/A")
+            print("TAG Key accuracy vs GT: N/A")
         print()
         print(f"Results saved to: {results_csv}")
     else:
