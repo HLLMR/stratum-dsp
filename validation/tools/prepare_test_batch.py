@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Prepare a test batch from FMA Small dataset metadata.
+Prepare a test batch from metadata (FMA-style CSVs).
 
-This script reads FMA metadata, filters for tracks with BPM ground truth (and key if available),
+This script reads metadata, filters for tracks with BPM ground truth (and key if available),
 and creates a test batch CSV file for validation.
 
-Ground truth comes from `fma_metadata/echonest.csv` audio features (tempo, key, mode) when present.
+Ground truth comes from `{metadata-dir}/echonest.csv` audio features (tempo, key, mode) when present.
 """
 
 import argparse
@@ -50,6 +50,8 @@ def read_fma_tracks_csv(path: Path) -> dict:
             if col == "track.genre_top":
                 genre_idx = i
                 break
+
+        filepath_idx = header_row.index("filepath") if "filepath" in header_row else None
         
         # Read data rows
         for row in reader:
@@ -57,7 +59,8 @@ def read_fma_tracks_csv(path: Path) -> dict:
                 try:
                     track_id = int(row[track_id_idx])
                     genre = row[genre_idx] if genre_idx and len(row) > genre_idx else ""
-                    tracks[track_id] = {"genre": genre}
+                    filepath = row[filepath_idx] if filepath_idx is not None and len(row) > filepath_idx else ""
+                    tracks[track_id] = {"genre": genre, "filepath": filepath}
                 except (ValueError, IndexError):
                     continue
     
@@ -156,13 +159,13 @@ def read_fma_echonest_csv(path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Prepare test batch from FMA Small dataset"
+        description="Prepare test batch from metadata (FMA-style tracks.csv + echonest.csv)"
     )
     parser.add_argument(
         "--num-tracks",
         type=int,
         default=20,
-        help="Number of tracks to include in test batch (default: 20)",
+        help="Number of tracks to include in test batch; use 0 for ALL (default: 20)",
     )
     parser.add_argument(
         "--data-path",
@@ -171,10 +174,27 @@ def main():
         help="Path to validation data directory (default: ../validation-data)",
     )
     parser.add_argument(
+        "--audio-dir",
+        type=str,
+        default="fma_small",
+        help="Audio directory under --data-path (default: fma_small)",
+    )
+    parser.add_argument(
+        "--metadata-dir",
+        type=str,
+        default="fma_metadata",
+        help="Metadata directory under --data-path (default: fma_metadata)",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
         help="Random seed for reproducible track selection",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include ALL tracks with files (overrides --num-tracks)",
     )
     
     args = parser.parse_args()
@@ -187,19 +207,19 @@ def main():
 
     # Paths (treat relative --data-path as relative to repo root)
     data_path = resolve_data_path(args.data_path, repo_root)
-    fma_path = data_path / "fma_small"
-    metadata_path = data_path / "fma_metadata"
+    audio_path = data_path / args.audio_dir
+    metadata_path = data_path / args.metadata_dir
     results_dir = data_path / "results"
     
     # Create results directory
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    print("FMA Validation - Prepare Test Batch")
+    print("Validation - Prepare Test Batch")
     print("=" * 40)
     print(f"Data path: {data_path}")
-    print(f"FMA path: {fma_path}")
+    print(f"Audio path: {audio_path}")
     print(f"Metadata path: {metadata_path}")
-    print(f"Tracks to test: {args.num_tracks}")
+    print(f"Tracks to test: {'ALL' if args.all or args.num_tracks == 0 else args.num_tracks}")
     print()
     
     # Check if metadata exists
@@ -207,18 +227,15 @@ def main():
     echonest_csv = metadata_path / "echonest.csv"
     
     if not tracks_csv.exists():
-        print(f"ERROR: FMA metadata not found at {tracks_csv}")
-        print("Please download FMA Small dataset and extract to:")
-        print(f"  {fma_path}")
-        print(f"  {metadata_path}")
+        print(f"ERROR: metadata not found at {tracks_csv}")
         sys.exit(1)
     
     if not echonest_csv.exists():
-        print(f"ERROR: FMA echonest metadata not found at {echonest_csv}")
+        print(f"ERROR: echonest metadata not found at {echonest_csv}")
         sys.exit(1)
     
     # Read metadata
-    print("Reading FMA tracks metadata...")
+    print("Reading tracks metadata...")
     try:
         tracks_data = read_fma_tracks_csv(tracks_csv)
         print(f"Loaded {len(tracks_data)} tracks from tracks.csv")
@@ -226,7 +243,7 @@ def main():
         print(f"ERROR: Could not read tracks.csv: {e}")
         sys.exit(1)
     
-    print("Reading FMA echonest metadata (tempo + key/mode when available)...")
+    print("Reading echonest metadata (tempo + key/mode when available)...")
     try:
         echonest_data = read_fma_echonest_csv(echonest_csv)
         tempo_count = sum(1 for v in echonest_data.values() if "tempo" in v)
@@ -246,6 +263,7 @@ def main():
                 "bpm": echonest_data[track_id]["tempo"],
                 "key": echonest_data[track_id].get("key", ""),
                 "genre": track_info.get("genre", ""),
+                "filepath": track_info.get("filepath", ""),
             })
     
     print(f"Found {len(valid_tracks)} tracks with tempo ground truth")
@@ -255,40 +273,46 @@ def main():
     else:
         print(f"Key ground truth available for {key_available}/{len(valid_tracks)} tracks in this pool.")
     
-    # Keep sampling until we find enough tracks with actual files
-    test_batch = []
-    max_attempts = min(len(valid_tracks) * 2, 10000)  # Don't try forever
-    attempts = 0
-    seen_track_ids = set()
-    
-    print(f"Searching for {args.num_tracks} tracks with actual files...")
-    
-    while len(test_batch) < args.num_tracks and attempts < max_attempts:
-        # Randomly select a track we haven't tried yet
-        remaining_tracks = [t for t in valid_tracks if t["track_id"] not in seen_track_ids]
-        if not remaining_tracks:
-            break  # No more tracks to try
-        
-        track = random.choice(remaining_tracks)
-        track_id = track["track_id"]
-        seen_track_ids.add(track_id)
-        attempts += 1
-        
-        track_file = find_track_file(fma_path, track_id)
-        
+    # Resolve filepaths and filter to tracks with existing audio files
+    candidates = []
+    for t in valid_tracks:
+        track_id = t["track_id"]
+        fp = (t.get("filepath") or "").strip()
+        if fp:
+            track_file = Path(fp)
+        else:
+            # FMA default: derive from track_id; otherwise require filepath in tracks.csv.
+            track_file = find_track_file(audio_path, track_id)
         if track_file.exists():
-            test_batch.append({
-                "track_id": track_id,
-                "filename": str(track_file.resolve()),
-                "bpm_gt": track["bpm"],
-                "key_gt": track.get("key", ""),
-                "genre": track["genre"],
-            })
-            if len(test_batch) % 10 == 0:
-                print(f"  Found {len(test_batch)}/{args.num_tracks} tracks...")
-    
-    if len(test_batch) < args.num_tracks:
-        print(f"WARNING: Only found {len(test_batch)} tracks with files out of {args.num_tracks} requested")
+            t2 = dict(t)
+            t2["filename"] = str(track_file.resolve())
+            candidates.append(t2)
+
+    print(f"Found {len(candidates)} tracks with tempo GT + files")
+    if not candidates:
+        print("ERROR: No tracks found with GT + files. If this is a non-FMA dataset, ensure tracks.csv includes a 'filepath' column.")
+        sys.exit(1)
+
+    want_n = len(candidates) if args.all or args.num_tracks == 0 else args.num_tracks
+    if want_n > len(candidates):
+        print(f"WARNING: Requested {want_n} tracks but only {len(candidates)} are available; using all available.")
+        want_n = len(candidates)
+
+    if want_n == len(candidates):
+        selected = candidates
+    else:
+        selected = random.sample(candidates, want_n)
+
+    test_batch = [
+        {
+            "track_id": t["track_id"],
+            "filename": t["filename"],
+            "bpm_gt": t["bpm"],
+            "key_gt": t.get("key", ""),
+            "genre": t.get("genre", ""),
+        }
+        for t in selected
+    ]
     
     print(f"\nPrepared {len(test_batch)} tracks for validation")
     
@@ -305,7 +329,7 @@ def main():
     print()
     print("Next steps:")
     print("1. Build stratum-dsp: cargo build --release")
-    print("2. Run validation: python run_validation.py")
+    print("2. Run validation: python -m validation.tools.run_validation")
 
 
 if __name__ == "__main__":
