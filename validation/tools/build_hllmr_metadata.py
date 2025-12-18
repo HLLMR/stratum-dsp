@@ -115,6 +115,7 @@ def main() -> int:
     used_ids: set[int] = set()
     track_rows = []
     echo_rows = []
+    missing_rows = []
 
     missing_bpm = 0
     missing_key = 0
@@ -150,11 +151,35 @@ def main() -> int:
             echo["mode_echonest"] = km[1]
         echo_rows.append(echo)
 
+        if bpm is None or not key_norm:
+            missing_rows.append(
+                {
+                    "track_id": tid,
+                    "filepath": str(mp3.resolve()),
+                    "title": fields.get("title", ""),
+                    "artist": fields.get("artist", ""),
+                    "genre": genre,
+                    "bpm": "" if bpm is None else f"{bpm:.6f}",
+                    "key_raw": key_raw,
+                    "key_norm": key_norm,
+                    "missing_bpm": "YES" if bpm is None else "NO",
+                    "missing_key": "YES" if not key_norm else "NO",
+                }
+            )
+
         if i % 50 == 0 or i == len(mp3s):
             print(f"[{i}/{len(mp3s)}] scanned...")
 
     write_tracks_csv(meta_dir / "tracks.csv", track_rows)
     write_echonest_csv(meta_dir / "echonest.csv", echo_rows)
+
+    missing_csv = meta_dir / "missing_tags.csv"
+    if missing_rows:
+        with missing_csv.open("w", newline="", encoding="utf-8") as f:
+            fieldnames = list(missing_rows[0].keys())
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            w.writerows(missing_rows)
 
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     readme = meta_dir / "README.txt"
@@ -184,6 +209,8 @@ def main() -> int:
     print(f"  missing_key: {missing_key}")
     print(f"  wrote: {meta_dir / 'tracks.csv'}")
     print(f"  wrote: {meta_dir / 'echonest.csv'}")
+    if missing_rows:
+        print(f"  wrote: {missing_csv}")
     print(f"  wrote: {readme}")
     return 0
 
