@@ -56,6 +56,15 @@ pub struct AnalysisConfig {
     /// Default: true.
     pub enable_legacy_bpm_guardrails: bool,
 
+    /// Emit tempogram BPM candidate list (top-N) into `AnalysisMetadata` for validation/tuning.
+    ///
+    /// Default: false (avoid bloating outputs in normal use).
+    pub emit_tempogram_candidates: bool,
+
+    /// Number of tempogram candidates to emit when `emit_tempogram_candidates` is enabled.
+    /// Default: 10.
+    pub tempogram_candidates_top_n: usize,
+
     /// Legacy guardrails: preferred BPM range (default: 75–150).
     pub legacy_bpm_preferred_min: f32,
     /// Legacy guardrails: preferred BPM range upper bound (default: 150).
@@ -134,6 +143,8 @@ impl Default for AnalysisConfig {
             force_legacy_bpm: false,
             enable_bpm_fusion: false,
             enable_legacy_bpm_guardrails: true,
+            emit_tempogram_candidates: false,
+            tempogram_candidates_top_n: 10,
             // Tuned defaults (empirical, small-batch): slightly wider preferred band and
             // slightly less aggressive down-weighting while keeping a strong extreme penalty.
             legacy_bpm_preferred_min: 72.0,

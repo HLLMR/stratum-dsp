@@ -78,7 +78,6 @@ fn boost_consensus_candidates(
         // If both methods agree (direct match), strong boost
         if autocorr_direct_match && comb_direct_match {
             estimate.confidence *= 1.5; // 50% boost for direct consensus
-            estimate.method_agreement += 10;
             log::debug!(
                 "Consensus boost (direct): {:.2} BPM (confidence: {:.3} → {:.3})",
                 estimate.bpm,
@@ -89,7 +88,6 @@ fn boost_consensus_candidates(
         // If one method has direct match and other has harmonic, moderate boost
         else if (autocorr_direct_match && comb_harmonic_match) || (comb_direct_match && autocorr_harmonic_match) {
             estimate.confidence *= 1.3; // 30% boost for harmonic consensus
-            estimate.method_agreement += 5;
             log::debug!(
                 "Consensus boost (harmonic): {:.2} BPM (confidence: {:.3} → {:.3})",
                 estimate.bpm,
@@ -101,14 +99,11 @@ fn boost_consensus_candidates(
         // This helps when comb filter finds the right answer but autocorr doesn't
         if comb_direct_match && estimate.bpm >= 60.0 && estimate.bpm <= 180.0 {
             estimate.confidence *= 1.4; // 40% boost for reasonable comb filter candidate
-            estimate.method_agreement += 5; // Bonus for being in reasonable range
             log::debug!(
-                "Consensus boost (reasonable range): {:.2} BPM (confidence: {:.3} → {:.3}, agreement: {} → {})",
+                "Consensus boost (reasonable range): {:.2} BPM (confidence: {:.3} → {:.3})",
                 estimate.bpm,
                 estimate.confidence / 1.4,
-                estimate.confidence,
-                estimate.method_agreement - 5,
-                estimate.method_agreement
+                estimate.confidence
             );
         }
     }
@@ -378,7 +373,6 @@ pub fn merge_bpm_candidates(
                 best_reasonable.confidence
             );
             best_reasonable.confidence *= 2.0; // Very strong boost
-            best_reasonable.method_agreement += 15; // High agreement bonus
         } else {
             log::warn!("No reasonable-range candidates (60-180 BPM) found in merged estimates! Total estimates: {}", estimates.len());
         }

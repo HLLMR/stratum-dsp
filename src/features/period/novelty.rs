@@ -151,6 +151,91 @@ pub fn spectral_flux_novelty(
     Ok(flux)
 }
 
+/// Extract SuperFlux novelty curve from magnitude spectrogram.
+///
+/// SuperFlux (Böck & Widmer, 2013) improves over plain spectral flux by using a
+/// max-filtered reference (here: along frequency on the *previous* frame) before
+/// differencing. This reduces false positives from vibrato/pitch modulation and
+/// tends to yield a cleaner onset-strength function for rhythmic analysis.
+///
+/// This implementation is a lightweight variant suitable for our tempo pipeline:
+/// - Log-compress magnitudes (`log1p`)
+/// - For each bin, subtract the max in a small frequency neighborhood of the previous frame
+/// - Half-wave rectify and sum energy
+///
+/// # Arguments
+///
+/// * `magnitude_spec_frames` - FFT magnitude spectrogram (n_frames × n_bins)
+/// * `max_filter_bins` - Neighborhood radius in bins for max filtering (typical: 3–8)
+///
+/// # Returns
+///
+/// Novelty curve as `Vec<f32>` with length `n_frames - 1`, normalized to [0, 1]
+pub fn superflux_novelty(
+    magnitude_spec_frames: &[Vec<f32>],
+    max_filter_bins: usize,
+) -> Result<Vec<f32>, AnalysisError> {
+    if magnitude_spec_frames.is_empty() || magnitude_spec_frames.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let n_bins = magnitude_spec_frames[0].len();
+    if n_bins == 0 {
+        return Err(AnalysisError::InvalidInput("Empty magnitude frames".to_string()));
+    }
+    for (i, frame) in magnitude_spec_frames.iter().enumerate() {
+        if frame.len() != n_bins {
+            return Err(AnalysisError::InvalidInput(
+                format!(
+                    "Inconsistent frame lengths: frame 0 has {} bins, frame {} has {} bins",
+                    n_bins,
+                    i,
+                    frame.len()
+                ),
+            ));
+        }
+    }
+
+    let k = max_filter_bins.max(1);
+
+    // Precompute log-compressed frames
+    let mut log_frames: Vec<Vec<f32>> = Vec::with_capacity(magnitude_spec_frames.len());
+    for frame in magnitude_spec_frames {
+        let lf: Vec<f32> = frame.iter().map(|&x| (1.0 + x.max(0.0)).ln()).collect();
+        log_frames.push(lf);
+    }
+
+    let mut flux = Vec::with_capacity(log_frames.len().saturating_sub(1));
+    for i in 1..log_frames.len() {
+        let prev = &log_frames[i - 1];
+        let curr = &log_frames[i];
+
+        let mut sum = 0.0f32;
+        for b in 0..n_bins {
+            let start = b.saturating_sub(k);
+            let end = (b + k + 1).min(n_bins);
+            let mut prev_max = 0.0f32;
+            for v in &prev[start..end] {
+                prev_max = prev_max.max(*v);
+            }
+            let diff = (curr[b] - prev_max).max(0.0);
+            sum += diff * diff;
+        }
+        flux.push(sum.sqrt());
+    }
+
+    if flux.is_empty() {
+        return Ok(Vec::new());
+    }
+    let max_flux = flux.iter().copied().fold(0.0f32, f32::max);
+    if max_flux > EPSILON {
+        for v in &mut flux {
+            *v /= max_flux;
+        }
+    }
+    Ok(flux)
+}
+
 /// Extract energy flux novelty curve from magnitude spectrogram
 ///
 /// Computes frame-to-frame energy changes by summing magnitude across all

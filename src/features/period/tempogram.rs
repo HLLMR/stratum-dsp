@@ -28,10 +28,24 @@
 
 use crate::error::AnalysisError;
 use super::BpmEstimate;
-use super::novelty::{spectral_flux_novelty, energy_flux_novelty, hfc_novelty, combined_novelty};
+use super::novelty::{superflux_novelty, energy_flux_novelty, hfc_novelty, combined_novelty};
 use super::tempogram_autocorr::{autocorrelation_tempogram, find_best_bpm_autocorr};
 use super::tempogram_fft::{fft_tempogram, find_best_bpm_fft};
 
+/// Debug view of scored tempogram BPM candidates (validation/tuning only).
+#[derive(Debug, Clone)]
+pub struct TempogramCandidateDebug {
+    /// Candidate tempo in BPM.
+    pub bpm: f32,
+    /// Combined score used for ranking (blended FFT+autocorr, with mild priors).
+    pub score: f32,
+    /// FFT-method normalized support in [0, 1].
+    pub fft_norm: f32,
+    /// Autocorrelation-method normalized support in [0, 1].
+    pub autocorr_norm: f32,
+    /// True if this candidate was selected as the final BPM.
+    pub selected: bool,
+}
 /// Estimate BPM using tempogram approach (dual method: FFT + Autocorrelation)
 ///
 /// This is the main entry point for tempogram-based BPM detection. It combines
@@ -80,11 +94,62 @@ pub fn estimate_bpm_tempogram(
     max_bpm: f32,
     bpm_resolution: f32,
 ) -> Result<BpmEstimate, AnalysisError> {
+    Ok(
+        estimate_bpm_tempogram_impl(
+            magnitude_spec_frames,
+            sample_rate,
+            hop_size,
+            min_bpm,
+            max_bpm,
+            bpm_resolution,
+        )?
+        .0,
+    )
+}
+
+/// Estimate BPM using tempogram analysis and return top-N candidates for diagnostics.
+pub fn estimate_bpm_tempogram_with_candidates(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+    hop_size: u32,
+    min_bpm: f32,
+    max_bpm: f32,
+    bpm_resolution: f32,
+    top_n: usize,
+) -> Result<(BpmEstimate, Vec<TempogramCandidateDebug>), AnalysisError> {
+    let (est, mut cands) = estimate_bpm_tempogram_impl(
+        magnitude_spec_frames,
+        sample_rate,
+        hop_size,
+        min_bpm,
+        max_bpm,
+        bpm_resolution,
+    )?;
+    if top_n == 0 {
+        cands.clear();
+    } else if cands.len() > top_n {
+        cands.truncate(top_n);
+    }
+    Ok((est, cands))
+}
+
+// --- implementation ---
+
+fn estimate_bpm_tempogram_impl(
+    magnitude_spec_frames: &[Vec<f32>],
+    sample_rate: u32,
+    hop_size: u32,
+    min_bpm: f32,
+    max_bpm: f32,
+    bpm_resolution: f32,
+) -> Result<(BpmEstimate, Vec<TempogramCandidateDebug>), AnalysisError> {
     log::debug!("Estimating BPM using tempogram: {} frames, sample_rate={}, hop_size={}, BPM range=[{:.1}, {:.1}]",
                 magnitude_spec_frames.len(), sample_rate, hop_size, min_bpm, max_bpm);
     
     // Step 1: Extract novelty curve (combine all three methods)
-    let spectral_novelty = spectral_flux_novelty(magnitude_spec_frames)?;
+    // SuperFlux tends to produce a cleaner onset-strength function than plain spectral flux,
+    // which can reduce metrical-level ambiguity in dense/harmonic material.
+    let spectral_novelty = superflux_novelty(magnitude_spec_frames, 4)?;
     let energy_novelty = energy_flux_novelty(magnitude_spec_frames)?;
     let hfc_novelty = hfc_novelty(magnitude_spec_frames, sample_rate)?;
     
@@ -140,12 +205,17 @@ pub fn estimate_bpm_tempogram(
         ));
     }
 
-    fn lookup_value(tempogram: &[(f32, f32)], bpm: f32, tol_bpm: f32) -> f32 {
-        tempogram
-            .iter()
-            .filter(|(b, _)| (*b - bpm).abs() <= tol_bpm)
-            .map(|(_, v)| *v)
-            .fold(0.0f32, f32::max)
+    fn lookup_nearest(tempogram: &[(f32, f32)], bpm: f32, tol_bpm: f32) -> f32 {
+        let mut best_d = f32::INFINITY;
+        let mut best_v = 0.0f32;
+        for (b, v) in tempogram.iter() {
+            let d = (*b - bpm).abs();
+            if d <= tol_bpm && d < best_d {
+                best_d = d;
+                best_v = *v;
+            }
+        }
+        best_v
     }
 
     fn push_candidate(cands: &mut Vec<f32>, bpm: f32, min_bpm: f32, max_bpm: f32) {
@@ -215,8 +285,10 @@ pub fn estimate_bpm_tempogram(
 
     let mut scored: Vec<ScoredCandidate> = Vec::with_capacity(uniq.len());
     for bpm in uniq {
-        let fft_val = lookup_value(&fft_tempogram_result, bpm, 2.0);
-        let autocorr_val = lookup_value(&autocorr_tempogram_result, bpm, bpm_resolution.max(0.5));
+        // Use a nearest-neighbor lookup (not max-over-window) to avoid score plateaus where
+        // adjacent BPMs all inherit the same peak strength (which collapses confidence to 0.0).
+        let fft_val = lookup_nearest(&fft_tempogram_result, bpm, 0.75);
+        let autocorr_val = lookup_nearest(&autocorr_tempogram_result, bpm, bpm_resolution.max(0.5));
 
         let fft_norm = (fft_val / max_fft).clamp(0.0, 1.0);
         let autocorr_norm = (autocorr_val / max_autocorr).clamp(0.0, 1.0);
@@ -338,11 +410,24 @@ pub fn estimate_bpm_tempogram(
         );
     }
 
-    Ok(BpmEstimate {
+    let estimate = BpmEstimate {
         bpm: best.bpm,
         confidence,
         method_agreement,
-    })
+    };
+
+    let diagnostics: Vec<TempogramCandidateDebug> = scored
+        .iter()
+        .map(|c| TempogramCandidateDebug {
+            bpm: c.bpm,
+            score: c.score,
+            fft_norm: c.fft_norm,
+            autocorr_norm: c.autocorr_norm,
+            selected: (c.bpm - best.bpm).abs() < 0.75,
+        })
+        .collect();
+
+    Ok((estimate, diagnostics))
 }
 
 #[cfg(test)]

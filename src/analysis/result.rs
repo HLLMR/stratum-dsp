@@ -162,6 +162,21 @@ pub enum AnalysisFlag {
     OnsetDetectionAmbiguous,
 }
 
+/// Tempogram candidate diagnostics (for validation/tuning)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TempoCandidateDebug {
+    /// Candidate tempo in BPM.
+    pub bpm: f32,
+    /// Combined score used for ranking (blended FFT+autocorr, with mild priors).
+    pub score: f32,
+    /// FFT-method normalized support in [0, 1].
+    pub fft_norm: f32,
+    /// Autocorrelation-method normalized support in [0, 1].
+    pub autocorr_norm: f32,
+    /// True if this candidate was selected as the final BPM.
+    pub selected: bool,
+}
+
 /// Complete analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResult {
@@ -221,6 +236,10 @@ pub struct AnalysisMetadata {
     
     /// Confidence warnings (low confidence, ambiguous results, etc.)
     pub confidence_warnings: Vec<String>,
+
+    /// Optional: tempogram candidate list (top-N) for diagnostics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempogram_candidates: Option<Vec<TempoCandidateDebug>>,
 }
 
 // Re-export for convenience

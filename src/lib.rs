@@ -321,28 +321,70 @@ pub fn analyze_audio(
         }
     };
 
+    let mut tempogram_candidates: Option<Vec<crate::analysis::result::TempoCandidateDebug>> = None;
+
     let tempogram_estimate = if !config.force_legacy_bpm && !magnitude_spec_frames.is_empty() {
-        use features::period::tempogram::estimate_bpm_tempogram;
-        match estimate_bpm_tempogram(
-            &magnitude_spec_frames,
-            sample_rate,
-            config.hop_size as u32,
-            config.min_bpm,
-            config.max_bpm,
-            config.bpm_resolution,
-        ) {
-            Ok(estimate) => {
-                log::debug!(
-                    "Tempogram BPM estimate: {:.2} (confidence: {:.3}, method_agreement: {})",
-                    estimate.bpm,
-                    estimate.confidence,
-                    estimate.method_agreement
-                );
-                Some(estimate)
+        use crate::analysis::result::TempoCandidateDebug;
+        use features::period::tempogram::{estimate_bpm_tempogram, estimate_bpm_tempogram_with_candidates};
+
+        if config.emit_tempogram_candidates {
+            match estimate_bpm_tempogram_with_candidates(
+                &magnitude_spec_frames,
+                sample_rate,
+                config.hop_size as u32,
+                config.min_bpm,
+                config.max_bpm,
+                config.bpm_resolution,
+                config.tempogram_candidates_top_n,
+            ) {
+                Ok((estimate, cands)) => {
+                    tempogram_candidates = Some(
+                        cands.into_iter()
+                            .map(|c| TempoCandidateDebug {
+                                bpm: c.bpm,
+                                score: c.score,
+                                fft_norm: c.fft_norm,
+                                autocorr_norm: c.autocorr_norm,
+                                selected: c.selected,
+                            })
+                            .collect(),
+                    );
+                    log::debug!(
+                        "Tempogram BPM estimate: {:.2} (confidence: {:.3}, method_agreement: {}, candidates_emitted={})",
+                        estimate.bpm,
+                        estimate.confidence,
+                        estimate.method_agreement,
+                        tempogram_candidates.as_ref().map(|v| v.len()).unwrap_or(0)
+                    );
+                    Some(estimate)
+                }
+                Err(e) => {
+                    log::warn!("Tempogram BPM detection failed: {}", e);
+                    None
+                }
             }
-            Err(e) => {
-                log::warn!("Tempogram BPM detection failed: {}", e);
-                None
+        } else {
+            match estimate_bpm_tempogram(
+                &magnitude_spec_frames,
+                sample_rate,
+                config.hop_size as u32,
+                config.min_bpm,
+                config.max_bpm,
+                config.bpm_resolution,
+            ) {
+                Ok(estimate) => {
+                    log::debug!(
+                        "Tempogram BPM estimate: {:.2} (confidence: {:.3}, method_agreement: {})",
+                        estimate.bpm,
+                        estimate.confidence,
+                        estimate.method_agreement
+                    );
+                    Some(estimate)
+                }
+                Err(e) => {
+                    log::warn!("Tempogram BPM detection failed: {}", e);
+                    None
+                }
             }
         }
     } else {
@@ -589,6 +631,7 @@ pub fn analyze_audio(
             methods_used: vec!["energy_flux".to_string(), "chroma_extraction".to_string(), "key_detection".to_string()],
             flags,
             confidence_warnings,
+            tempogram_candidates,
         },
     };
     

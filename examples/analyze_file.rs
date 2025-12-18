@@ -176,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
+        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
         std::process::exit(1);
     }
     
@@ -189,6 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let no_onset_consensus = args.contains(&"--no-onset-consensus".to_string());
     let force_legacy_bpm = args.contains(&"--force-legacy-bpm".to_string());
     let bpm_fusion = args.contains(&"--bpm-fusion".to_string());
+    let bpm_candidates = args.contains(&"--bpm-candidates".to_string());
 
     fn arg_value(args: &[String], name: &str) -> Option<String> {
         args.iter()
@@ -199,6 +200,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fn parse_f32(args: &[String], name: &str) -> Option<f32> {
         arg_value(args, name).and_then(|v| v.parse::<f32>().ok())
+    }
+
+    fn parse_usize(args: &[String], name: &str) -> Option<usize> {
+        arg_value(args, name).and_then(|v| v.parse::<usize>().ok())
     }
     
     // Initialize logger - set debug level if requested or if RUST_LOG is set
@@ -237,6 +242,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if bpm_fusion {
         config.enable_bpm_fusion = true;
+    }
+    if bpm_candidates {
+        config.emit_tempogram_candidates = true;
+    }
+    if let Some(n) = parse_usize(&args, "--bpm-candidates-top") {
+        config.emit_tempogram_candidates = true;
+        config.tempogram_candidates_top_n = n;
     }
 
     // Optional tuning overrides for legacy BPM guardrails (confidence multipliers by tempo range)
@@ -292,6 +304,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  \"key_confidence\": {:.2},", confidence.key_confidence);
         println!("  \"key_clarity\": {:.2},", result.key_clarity);
         println!("  \"grid_stability\": {:.2},", result.grid_stability);
+        if let Some(cands) = result.metadata.tempogram_candidates.as_ref() {
+            println!("  \"bpm_candidates\": [");
+            for (i, c) in cands.iter().enumerate() {
+                let comma = if i + 1 == cands.len() { "" } else { "," };
+                println!(
+                    "    {{ \"bpm\": {:.2}, \"score\": {:.4}, \"fft_norm\": {:.4}, \"autocorr_norm\": {:.4}, \"selected\": {} }}{}",
+                    c.bpm,
+                    c.score,
+                    c.fft_norm,
+                    c.autocorr_norm,
+                    if c.selected { "true" } else { "false" },
+                    comma
+                );
+            }
+            println!("  ],");
+        }
         println!("  \"processing_time_ms\": {:.2}", result.metadata.processing_time_ms);
         println!("}}");
     } else {

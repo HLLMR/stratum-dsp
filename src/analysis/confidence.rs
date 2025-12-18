@@ -330,6 +330,7 @@ mod tests {
                 methods_used: vec![],
                 flags: vec![],
                 confidence_warnings: vec![],
+                tempogram_candidates: None,
             },
         }
     }

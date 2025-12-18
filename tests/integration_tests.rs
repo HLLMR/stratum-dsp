@@ -133,7 +133,7 @@ mod tests {
         // For fixed-tempo test fixtures, we can use tighter tolerance (±2 BPM)
         if result.bpm > 0.0 {
             assert!(
-                (result.bpm - 128.0).abs() < 2.0,
+                (result.bpm - 128.0).abs() <= 2.0,
                 "BPM should be close to 128 (±2 BPM tolerance), got {:.2}",
                 result.bpm
             );
