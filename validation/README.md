@@ -69,7 +69,8 @@ Options:
 
 This will:
 1. Run stratum-dsp on each track in the test batch
-2. Compare results to ground truth (BPM and key)
+2. Compare results to ground truth (tempo and key when available in metadata)
+3. Read **TAG** values from the audio file’s ID3 tags (if present) and compare those to ground truth as well
 3. Generate a results CSV with metrics
 4. Print a summary with accuracy statistics
 
@@ -127,9 +128,13 @@ Contains validation results for each track:
 - `bpm_gt`: Ground truth BPM
 - `bpm_pred`: Predicted BPM
 - `bpm_error`: Absolute BPM error
+- `bpm_tag`: TAG BPM (from ID3 TBPM), if present
+- `bpm_tag_error`: Absolute TAG BPM error vs ground truth, if present
 - `key_gt`: Ground truth key
 - `key_pred`: Predicted key
 - `key_match`: "YES" if keys match, "NO" otherwise
+- `key_tag`: TAG key (from ID3 TKEY / common TXXX fallbacks), if present
+- `key_tag_match`: "YES" if TAG key matches ground truth, "NO" otherwise
 - `bpm_confidence`: BPM confidence score
 - `key_confidence`: Key confidence score
 - `key_clarity`: Key clarity score
@@ -147,4 +152,5 @@ The validation compares results against these targets:
 - The scripts are cross-platform (Windows, Linux, macOS)
 - Python 3.6+ is required (no external dependencies)
 - The validation uses the `analyze_file` example binary which outputs JSON for easy parsing
+- TAG extraction currently supports **ID3v2.3/2.4** and reads `TBPM`, `TKEY`, plus common `TXXX` key fields (e.g., `initialkey`).
 

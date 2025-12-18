@@ -16,27 +16,213 @@ from datetime import datetime
 from pathlib import Path
 
 
-def parse_key(key_str: str) -> str:
-    """Parse key string to standard format (e.g., 'C', 'Am', 'F#', 'D#m')."""
-    # FMA keys might be in various formats, normalize them
-    key_str = key_str.strip().upper()
-    
-    # Handle common variations
-    if key_str.endswith("MAJOR") or key_str.endswith("MAJ"):
-        key_str = key_str.replace("MAJOR", "").replace("MAJ", "").strip()
-    elif key_str.endswith("MINOR") or key_str.endswith("MIN"):
-        key_str = key_str.replace("MINOR", "").replace("MIN", "").strip() + "m"
-    
-    # Handle flat notation (e.g., "Bb" -> "A#")
-    key_map = {
-        "DB": "C#", "EB": "D#", "GB": "F#", "AB": "G#", "BB": "A#",
-        "DBM": "C#M", "EBM": "D#M", "GBM": "F#M", "ABM": "G#M", "BBM": "A#M",
+def _camelot_to_key(camelot: str) -> str:
+    """
+    Convert Camelot notation (e.g., '8A', '8B') to a key name (e.g., 'Am', 'C').
+
+    Mapping follows the standard Camelot wheel.
+    """
+    c = camelot.strip().upper()
+    mapping = {
+        "1A": "G#m",
+        "1B": "B",
+        "2A": "D#m",
+        "2B": "F#",
+        "3A": "A#m",
+        "3B": "C#",
+        "4A": "Fm",
+        "4B": "G#",
+        "5A": "Cm",
+        "5B": "D#",
+        "6A": "Gm",
+        "6B": "A#",
+        "7A": "Dm",
+        "7B": "F",
+        "8A": "Am",
+        "8B": "C",
+        "9A": "Em",
+        "9B": "G",
+        "10A": "Bm",
+        "10B": "D",
+        "11A": "F#m",
+        "11B": "A",
+        "12A": "C#m",
+        "12B": "E",
     }
-    for old, new in key_map.items():
-        if key_str.startswith(old):
-            key_str = key_str.replace(old, new)
-    
-    return key_str
+    return mapping.get(c, "")
+
+
+def normalize_key(key_str: str) -> str:
+    """
+    Normalize a key string into a canonical form for comparison: e.g., 'C', 'Am', 'F#', 'D#m'.
+
+    Also supports Camelot notation (e.g., '8A' -> 'Am').
+    """
+    if not key_str:
+        return ""
+
+    s_raw = key_str.strip()
+    if not s_raw:
+        return ""
+
+    # Camelot notation detection (1A..12B)
+    s_upper = s_raw.upper().replace(" ", "")
+    if (
+        len(s_upper) in (2, 3)
+        and s_upper[-1] in ("A", "B")
+        and s_upper[:-1].isdigit()
+        and 1 <= int(s_upper[:-1]) <= 12
+    ):
+        mapped = _camelot_to_key(s_upper)
+        if mapped:
+            return mapped
+
+    # Normalize unicode accidentals and whitespace
+    s = s_raw.replace("♭", "b").replace("♯", "#").strip()
+    lower = s.lower()
+
+    # Identify minor/major descriptors
+    is_minor = False
+    if "minor" in lower or lower.endswith("min") or lower.endswith(" minor"):
+        is_minor = True
+    if lower.endswith("m") and not lower.endswith("maj") and not lower.endswith(" major"):
+        # Common shorthand, e.g., "Am", "C#m"
+        is_minor = True
+
+    # Strip descriptors
+    for suffix in (" major", " maj", "major", "maj", " minor", " min", "minor", "min"):
+        if lower.endswith(suffix.strip()):
+            s = s[: -len(suffix.strip())].strip()
+            lower = s.lower()
+            break
+
+    s = s.replace(" ", "")
+    if not s:
+        return ""
+
+    # Parse note token
+    note = s[0].upper()
+    if note < "A" or note > "G":
+        return ""
+
+    accidental = ""
+    if len(s) >= 2 and s[1] in ("#", "b", "B"):
+        accidental = s[1]
+        if accidental == "B":
+            accidental = "b"
+
+    base = note + accidental
+    # Convert flats to sharps
+    flat_map = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
+    base = flat_map.get(base, base)
+
+    return base + ("m" if is_minor else "")
+
+
+def _synchsafe_to_int(b: bytes) -> int:
+    return ((b[0] & 0x7F) << 21) | ((b[1] & 0x7F) << 14) | ((b[2] & 0x7F) << 7) | (b[3] & 0x7F)
+
+
+def _decode_text_frame(payload: bytes) -> str:
+    if not payload:
+        return ""
+    enc = payload[0]
+    data = payload[1:]
+    try:
+        if enc == 0:  # ISO-8859-1
+            return data.decode("latin1", errors="replace").strip("\x00").strip()
+        if enc == 1:  # UTF-16 with BOM
+            return data.decode("utf-16", errors="replace").strip("\x00").strip()
+        if enc == 2:  # UTF-16BE without BOM
+            return data.decode("utf-16-be", errors="replace").strip("\x00").strip()
+        if enc == 3:  # UTF-8
+            return data.decode("utf-8", errors="replace").strip("\x00").strip()
+    except Exception:
+        pass
+    # Fallback
+    return data.decode("latin1", errors="replace").strip("\x00").strip()
+
+
+def read_tag_bpm_key(mp3_path: Path) -> dict:
+    """
+    Read BPM and Key from ID3 tags (source label: TAG).
+
+    We try the canonical ID3v2 text frames first:
+      - TBPM (tempo)
+      - TKEY (key)
+
+    Then we try common TXXX fallbacks for tools that store custom key fields:
+      - TXXX:INITIALKEY / TXXX:initialkey
+      - TXXX:KEY / TXXX:Key
+    """
+    out = {"bpm_tag": None, "key_tag": ""}
+
+    try:
+        with open(mp3_path, "rb") as f:
+            header = f.read(10)
+            if len(header) != 10 or header[0:3] != b"ID3":
+                return out
+
+            ver_major = header[3]
+            tag_size = _synchsafe_to_int(header[6:10])
+            tag_data = f.read(tag_size)
+    except Exception:
+        return out
+
+    pos = 0
+    # ID3v2.3/2.4 frames: 10-byte headers
+    while pos + 10 <= len(tag_data):
+        frame_id = tag_data[pos : pos + 4].decode("latin1", errors="ignore")
+        if frame_id.strip("\x00") == "":
+            break
+
+        size_bytes = tag_data[pos + 4 : pos + 8]
+        if ver_major == 4:
+            frame_size = _synchsafe_to_int(size_bytes)
+        else:
+            frame_size = int.from_bytes(size_bytes, "big", signed=False)
+
+        # flags = tag_data[pos+8:pos+10] (unused)
+        pos += 10
+        if frame_size <= 0 or pos + frame_size > len(tag_data):
+            break
+
+        payload = tag_data[pos : pos + frame_size]
+        pos += frame_size
+
+        if frame_id == "TBPM":
+            txt = _decode_text_frame(payload)
+            try:
+                out["bpm_tag"] = float(txt)
+            except ValueError:
+                pass
+        elif frame_id == "TKEY":
+            out["key_tag"] = _decode_text_frame(payload)
+        elif frame_id == "TXXX":
+            # TXXX: [encoding][desc]\x00[ value ]
+            if not payload:
+                continue
+            enc = payload[0]
+            rest = payload[1:]
+            # Split description/value by encoding-specific null separator
+            if enc in (0, 3):  # single-byte encodings
+                parts = rest.split(b"\x00", 1)
+            else:  # UTF-16 variants
+                parts = rest.split(b"\x00\x00", 1)
+            if len(parts) != 2:
+                continue
+            desc_bytes, val_bytes = parts[0], parts[1]
+            desc = _decode_text_frame(bytes([enc]) + desc_bytes).strip().lower()
+            val = _decode_text_frame(bytes([enc]) + val_bytes).strip()
+            if desc in ("initialkey", "initial key", "key"):
+                if val and not out["key_tag"]:
+                    out["key_tag"] = val
+
+        # Early exit if we have both
+        if out["bpm_tag"] is not None and out["key_tag"]:
+            break
+
+    return out
 
 
 def run_stratum_dsp(binary_path: Path, audio_file: Path, extra_args=None) -> dict:
@@ -243,13 +429,25 @@ def main():
             print("ERROR: Missing BPM or key in results")
             continue
         
-        # Compare to ground truth
+        # Read TAG-based BPM/key (written externally into ID3 tags)
+        tag_fields = read_tag_bpm_key(audio_file)
+        bpm_tag = tag_fields.get("bpm_tag")
+        key_tag = tag_fields.get("key_tag", "")
+
+        # Compare to ground truth (from metadata CSVs via test batch)
         bpm_error = abs(pred_bpm - bpm_gt)
-        # Handle missing key ground truth (FMA doesn't have key annotations)
-        if key_gt and key_gt.strip():
-            key_match = "YES" if parse_key(pred_key) == parse_key(key_gt) else "NO"
+        bpm_tag_error = abs(float(bpm_tag) - bpm_gt) if bpm_tag is not None else ""
+
+        key_gt_norm = normalize_key(key_gt)
+        key_pred_norm = normalize_key(pred_key)
+        key_tag_norm = normalize_key(key_tag)
+
+        if key_gt_norm:
+            key_match = "YES" if key_pred_norm == key_gt_norm else "NO"
+            key_tag_match = "YES" if key_tag_norm == key_gt_norm else "NO" if key_tag_norm else "NO"
         else:
-            key_match = "N/A"  # No ground truth available
+            key_match = "N/A"
+            key_tag_match = "N/A"
         
         results.append({
             "track_id": track_id,
@@ -257,16 +455,25 @@ def main():
             "bpm_gt": bpm_gt,
             "bpm_pred": pred_bpm,
             "bpm_error": bpm_error,
+            "bpm_tag": bpm_tag if bpm_tag is not None else "",
+            "bpm_tag_error": bpm_tag_error,
             "key_gt": key_gt,
             "key_pred": pred_key,
             "key_match": key_match,
+            "key_tag": key_tag,
+            "key_tag_match": key_tag_match,
             "bpm_confidence": analysis_result.get("bpm_confidence", 0.0),
             "key_confidence": analysis_result.get("key_confidence", 0.0),
             "key_clarity": analysis_result.get("key_clarity", 0.0),
             "grid_stability": analysis_result.get("grid_stability", 0.0),
         })
         
-        print(f"BPM: {pred_bpm:.1f} (error: {bpm_error:.1f}), Key: {pred_key} ({key_match})")
+        bpm_tag_str = f"{float(bpm_tag):.1f}" if bpm_tag is not None else "N/A"
+        bpm_tag_err_str = f"{float(bpm_tag_error):.1f}" if bpm_tag is not None else "N/A"
+        print(
+            f"BPM: {pred_bpm:.1f} (error: {bpm_error:.1f}), TAG BPM: {bpm_tag_str} (error: {bpm_tag_err_str}), "
+            f"Key: {pred_key} ({key_match}), TAG Key: {key_tag or 'N/A'} ({key_tag_match})"
+        )
     
     # Save results with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -285,15 +492,55 @@ def main():
     
     if results:
         avg_bpm_error = sum(r["bpm_error"] for r in results) / len(results)
-        key_accuracy = sum(1 for r in results if r["key_match"] == "YES") / len(results) * 100
+
+        # Key ground truth may be missing; only compute accuracy if available
+        key_rows = [r for r in results if r.get("key_match") in ("YES", "NO")]
+        key_accuracy = (
+            sum(1 for r in key_rows if r["key_match"] == "YES") / len(key_rows) * 100
+            if key_rows
+            else 0.0
+        )
+
+        # TAG metrics (if present)
+        tag_rows = [r for r in results if r.get("bpm_tag_error") != ""]
+        avg_bpm_tag_error = (
+            sum(float(r["bpm_tag_error"]) for r in tag_rows) / len(tag_rows)
+            if tag_rows
+            else None
+        )
+        bpm_tag_accuracy_2 = (
+            sum(1 for r in tag_rows if float(r["bpm_tag_error"]) <= 2.0) / len(tag_rows) * 100
+            if tag_rows
+            else None
+        )
+        key_tag_rows = [r for r in results if r.get("key_tag_match") in ("YES", "NO")]
+        key_tag_accuracy = (
+            sum(1 for r in key_tag_rows if r["key_tag_match"] == "YES") / len(key_tag_rows) * 100
+            if key_tag_rows
+            else None
+        )
         
         # BPM accuracy within ±2 BPM
         bpm_accuracy_2 = sum(1 for r in results if r["bpm_error"] <= 2.0) / len(results) * 100
         
         print(f"Tracks tested: {len(results)}")
-        print(f"BPM MAE: ±{avg_bpm_error:.2f}")
-        print(f"BPM accuracy (±2 BPM): {bpm_accuracy_2:.1f}%")
-        print(f"Key accuracy: {key_accuracy:.1f}%")
+        print(f"Stratum BPM MAE: ±{avg_bpm_error:.2f}")
+        print(f"Stratum BPM accuracy (±2 BPM): {bpm_accuracy_2:.1f}%")
+        if key_rows:
+            print(f"Stratum Key accuracy: {key_accuracy:.1f}%")
+        else:
+            print("Stratum Key accuracy: N/A (no key ground truth in batch)")
+
+        if avg_bpm_tag_error is not None:
+            print(f"TAG BPM MAE: ±{avg_bpm_tag_error:.2f} (n={len(tag_rows)})")
+            print(f"TAG BPM accuracy (±2 BPM): {bpm_tag_accuracy_2:.1f}%")
+        else:
+            print("TAG BPM: N/A (no TBPM found in tags for this batch)")
+
+        if key_tag_accuracy is not None:
+            print(f"TAG Key accuracy: {key_tag_accuracy:.1f}% (n={len(key_tag_rows)})")
+        else:
+            print("TAG Key accuracy: N/A")
         print()
         print(f"Results saved to: {results_csv}")
     else:

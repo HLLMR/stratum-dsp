@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Prepare test batch from FMA Small dataset metadata.
+Prepare a test batch from FMA Small dataset metadata.
 
-This script reads FMA metadata, filters for tracks with BPM ground truth,
+This script reads FMA metadata, filters for tracks with BPM ground truth (and key if available),
 and creates a test batch CSV file for validation.
 
-Note: FMA dataset doesn't include key annotations, so we only validate BPM.
+Ground truth comes from `fma_metadata/echonest.csv` audio features (tempo, key, mode) when present.
 """
 
 import argparse
@@ -58,9 +58,28 @@ def read_fma_tracks_csv(path: Path) -> dict:
     return tracks
 
 
+def echonest_key_mode_to_name(key: int, mode: int) -> str:
+    """
+    Convert Echonest key/mode to a key name.
+
+    Echonest convention:
+      - key: 0..11 (C, C#, D, D#, E, F, F#, G, G#, A, A#, B)
+      - mode: 1=major, 0=minor
+    """
+    names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    if key < 0 or key >= len(names):
+        return ""
+    note = names[key]
+    if mode == 0:
+        return f"{note}m"
+    if mode == 1:
+        return note
+    return ""
+
+
 def read_fma_echonest_csv(path: Path) -> dict:
-    """Read FMA echonest.csv with hierarchical structure to get BPM (tempo)."""
-    tempo_data = {}
+    """Read FMA echonest.csv with hierarchical structure to get BPM (tempo) and key/mode (when available)."""
+    data = {}
     with open(path, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         # Read hierarchical header rows
@@ -72,18 +91,27 @@ def read_fma_echonest_csv(path: Path) -> dict:
         # Find track_id column index
         track_id_idx = h4.index("track_id") if "track_id" in h4 else 0
         
-        # Find tempo column by matching all three header levels
+        # Find columns by matching all three header levels
         tempo_idx = None
+        key_idx = None
+        mode_idx = None
         for i in range(len(h1)):
             if (h1[i] == "echonest" and 
                 i < len(h2) and h2[i] == "audio_features" and
                 i < len(h3) and h3[i] == "tempo"):
                 tempo_idx = i
-                break
+            if (h1[i] == "echonest" and 
+                i < len(h2) and h2[i] == "audio_features" and
+                i < len(h3) and h3[i] == "key"):
+                key_idx = i
+            if (h1[i] == "echonest" and 
+                i < len(h2) and h2[i] == "audio_features" and
+                i < len(h3) and h3[i] == "mode"):
+                mode_idx = i
         
         if tempo_idx is None:
             print("WARNING: Could not find tempo column in echonest.csv")
-            return tempo_data
+            return data
         
         # Read data rows
         for row in reader:
@@ -94,11 +122,30 @@ def read_fma_echonest_csv(path: Path) -> dict:
                     if tempo_str:
                         tempo = float(tempo_str)
                         if tempo > 0:
-                            tempo_data[track_id] = tempo
+                            if track_id not in data:
+                                data[track_id] = {}
+                            data[track_id]["tempo"] = tempo
+
+                    # Key/mode are optional (some metadata distributions may omit them)
+                    if key_idx is not None and mode_idx is not None:
+                        if len(row) > max(key_idx, mode_idx):
+                            key_str = row[key_idx].strip()
+                            mode_str = row[mode_idx].strip()
+                            if key_str and mode_str:
+                                try:
+                                    k = int(float(key_str))
+                                    m = int(float(mode_str))
+                                    key_name = echonest_key_mode_to_name(k, m)
+                                    if key_name:
+                                        if track_id not in data:
+                                            data[track_id] = {}
+                                        data[track_id]["key"] = key_name
+                                except ValueError:
+                                    pass
                 except (ValueError, IndexError):
                     continue
     
-    return tempo_data
+    return data
 
 
 def main():
@@ -171,10 +218,13 @@ def main():
         print(f"ERROR: Could not read tracks.csv: {e}")
         sys.exit(1)
     
-    print("Reading FMA echonest metadata (BPM)...")
+    print("Reading FMA echonest metadata (tempo + key/mode when available)...")
     try:
-        tempo_data = read_fma_echonest_csv(echonest_csv)
-        print(f"Loaded BPM data for {len(tempo_data)} tracks from echonest.csv")
+        echonest_data = read_fma_echonest_csv(echonest_csv)
+        tempo_count = sum(1 for v in echonest_data.values() if "tempo" in v)
+        key_count = sum(1 for v in echonest_data.values() if "key" in v)
+        print(f"Loaded tempo data for {tempo_count} tracks from echonest.csv")
+        print(f"Loaded key data for {key_count} tracks from echonest.csv")
     except Exception as e:
         print(f"ERROR: Could not read echonest.csv: {e}")
         sys.exit(1)
@@ -182,15 +232,20 @@ def main():
     # Combine data and filter for tracks with BPM
     valid_tracks = []
     for track_id, track_info in tracks_data.items():
-        if track_id in tempo_data:
+        if track_id in echonest_data and "tempo" in echonest_data[track_id]:
             valid_tracks.append({
                 "track_id": track_id,
-                "bpm": tempo_data[track_id],
+                "bpm": echonest_data[track_id]["tempo"],
+                "key": echonest_data[track_id].get("key", ""),
                 "genre": track_info.get("genre", ""),
             })
     
-    print(f"Found {len(valid_tracks)} tracks with BPM ground truth")
-    print("Note: FMA dataset doesn't include key annotations, so we'll only validate BPM")
+    print(f"Found {len(valid_tracks)} tracks with tempo ground truth")
+    key_available = sum(1 for t in valid_tracks if t.get("key"))
+    if key_available == 0:
+        print("Note: No key ground truth found in echonest metadata (key evaluation will be N/A).")
+    else:
+        print(f"Key ground truth available for {key_available}/{len(valid_tracks)} tracks in this pool.")
     
     # Keep sampling until we find enough tracks with actual files
     test_batch = []
@@ -218,7 +273,7 @@ def main():
                 "track_id": track_id,
                 "filename": str(track_file.resolve()),
                 "bpm_gt": track["bpm"],
-                "key_gt": "",  # FMA doesn't have key annotations
+                "key_gt": track.get("key", ""),
                 "genre": track["genre"],
             })
             if len(test_batch) % 10 == 0:

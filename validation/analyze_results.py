@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze validation results"""
+"""Analyze validation results (Stratum vs TAG if present)"""
 
 import argparse
 import csv
@@ -25,43 +25,93 @@ def analyze_file(results_file: str) -> None:
         rows = list(reader)
 
     errors = [abs(float(row["bpm_error"])) for row in rows]
+    has_tag = "bpm_tag_error" in (rows[0] if rows else {})
+    tag_errors = []
+    if has_tag:
+        for row in rows:
+            v = row.get("bpm_tag_error", "")
+            if v != "":
+                try:
+                    tag_errors.append(abs(float(v)))
+                except ValueError:
+                    pass
 
     print("=" * 60)
     print("VALIDATION RESULTS ANALYSIS")
     print("=" * 60)
     print(f"\nTotal tracks: {len(rows)}")
-    print(f"MAE: {statistics.mean(errors):.2f} BPM")
+    print(f"Stratum MAE: {statistics.mean(errors):.2f} BPM")
+    if tag_errors:
+        print(f"TAG MAE: {statistics.mean(tag_errors):.2f} BPM (n={len(tag_errors)})")
     print("\nAccuracy:")
     print(
         f"  Within ±2 BPM: {sum(1 for e in errors if e <= 2)}/{len(errors)} "
         f"({100*sum(1 for e in errors if e <= 2)/len(errors):.1f}%)"
     )
+    if tag_errors:
+        print(
+            f"  TAG within ±2 BPM: {sum(1 for e in tag_errors if e <= 2)}/{len(tag_errors)} "
+            f"({100*sum(1 for e in tag_errors if e <= 2)/len(tag_errors):.1f}%)"
+        )
     print(
         f"  Within ±5 BPM: {sum(1 for e in errors if e <= 5)}/{len(errors)} "
         f"({100*sum(1 for e in errors if e <= 5)/len(errors):.1f}%)"
     )
+    if tag_errors:
+        print(
+            f"  TAG within ±5 BPM: {sum(1 for e in tag_errors if e <= 5)}/{len(tag_errors)} "
+            f"({100*sum(1 for e in tag_errors if e <= 5)/len(tag_errors):.1f}%)"
+        )
     print(
         f"  Within ±10 BPM: {sum(1 for e in errors if e <= 10)}/{len(errors)} "
         f"({100*sum(1 for e in errors if e <= 10)/len(errors):.1f}%)"
     )
+    if tag_errors:
+        print(
+            f"  TAG within ±10 BPM: {sum(1 for e in tag_errors if e <= 10)}/{len(tag_errors)} "
+            f"({100*sum(1 for e in tag_errors if e <= 10)/len(tag_errors):.1f}%)"
+        )
     print(
         f"  Within ±20 BPM: {sum(1 for e in errors if e <= 20)}/{len(errors)} "
         f"({100*sum(1 for e in errors if e <= 20)/len(errors):.1f}%)"
     )
+    if tag_errors:
+        print(
+            f"  TAG within ±20 BPM: {sum(1 for e in tag_errors if e <= 20)}/{len(tag_errors)} "
+            f"({100*sum(1 for e in tag_errors if e <= 20)/len(tag_errors):.1f}%)"
+        )
 
-    print("\nError distribution:")
+    print("\nStratum error distribution:")
     print(f"  < 5 BPM: {sum(1 for e in errors if e < 5)}")
     print(f"  5-20 BPM: {sum(1 for e in errors if 5 <= e < 20)}")
     print(f"  20-50 BPM: {sum(1 for e in errors if 20 <= e < 50)}")
     print(f"  50-100 BPM: {sum(1 for e in errors if 50 <= e < 100)}")
     print(f"  > 100 BPM: {sum(1 for e in errors if e >= 100)}")
+    if tag_errors:
+        print("\nTAG error distribution:")
+        print(f"  < 5 BPM: {sum(1 for e in tag_errors if e < 5)}")
+        print(f"  5-20 BPM: {sum(1 for e in tag_errors if 5 <= e < 20)}")
+        print(f"  20-50 BPM: {sum(1 for e in tag_errors if 20 <= e < 50)}")
+        print(f"  50-100 BPM: {sum(1 for e in tag_errors if 50 <= e < 100)}")
+        print(f"  > 100 BPM: {sum(1 for e in tag_errors if e >= 100)}")
 
-    print("\nWorst errors:")
+    print("\nWorst Stratum errors:")
     worst = sorted(rows, key=lambda x: abs(float(x["bpm_error"])), reverse=True)[:10]
     for w in worst:
         print(
             f"  Track {w['track_id']}: GT={w['bpm_gt']}, Pred={w['bpm_pred']}, Error={w['bpm_error']}"
         )
+    if tag_errors:
+        print("\nWorst TAG errors:")
+        worst_tag = sorted(
+            [r for r in rows if r.get("bpm_tag_error", "") != ""],
+            key=lambda x: abs(float(x["bpm_tag_error"])),
+            reverse=True,
+        )[:10]
+        for w in worst_tag:
+            print(
+                f"  Track {w['track_id']}: GT={w['bpm_gt']}, TAG={w.get('bpm_tag','')}, Error={w.get('bpm_tag_error','')}"
+            )
 
     print("\nPattern analysis:")
     print("Tracks with ~60 BPM predictions (likely floor effect):")
