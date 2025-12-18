@@ -16,13 +16,13 @@ from datetime import datetime
 from pathlib import Path
 
 
-def _camelot_to_key(camelot: str) -> str:
+def _numerical_to_key(numerical: str) -> str:
     """
-    Convert Camelot notation (e.g., '8A', '8B') to a key name (e.g., 'Am', 'C').
+    Convert numerical notation (e.g., '8A', '8B') to a key name (e.g., 'Am', 'C').
 
-    Mapping follows the standard Camelot wheel.
+    Mapping follows the common DJ numerical wheel convention.
     """
-    c = camelot.strip().upper()
+    c = numerical.strip().upper()
     mapping = {
         "1A": "G#m",
         "1B": "B",
@@ -56,7 +56,7 @@ def normalize_key(key_str: str) -> str:
     """
     Normalize a key string into a canonical form for comparison: e.g., 'C', 'Am', 'F#', 'D#m'.
 
-    Also supports Camelot notation (e.g., '8A' -> 'Am').
+    Also supports numerical notation (e.g., '8A' -> 'Am').
     """
     if not key_str:
         return ""
@@ -65,7 +65,7 @@ def normalize_key(key_str: str) -> str:
     if not s_raw:
         return ""
 
-    # Camelot notation detection (1A..12B)
+    # Numerical notation detection (1A..12B)
     s_upper = s_raw.upper().replace(" ", "")
     if (
         len(s_upper) in (2, 3)
@@ -73,7 +73,7 @@ def normalize_key(key_str: str) -> str:
         and s_upper[:-1].isdigit()
         and 1 <= int(s_upper[:-1]) <= 12
     ):
-        mapped = _camelot_to_key(s_upper)
+        mapped = _numerical_to_key(s_upper)
         if mapped:
             return mapped
 
