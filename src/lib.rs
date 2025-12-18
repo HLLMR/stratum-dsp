@@ -325,9 +325,120 @@ pub fn analyze_audio(
 
     let tempogram_estimate = if !config.force_legacy_bpm && !magnitude_spec_frames.is_empty() {
         use crate::analysis::result::TempoCandidateDebug;
+        use features::period::multi_resolution::multi_resolution_tempogram_from_samples;
         use features::period::tempogram::{estimate_bpm_tempogram, estimate_bpm_tempogram_with_candidates};
 
-        if config.emit_tempogram_candidates {
+        if config.enable_tempogram_multi_resolution {
+            // Run single-resolution tempogram first; only escalate to multi-resolution
+            // when the result looks ambiguous (prevents global regressions).
+            let base_top_n = config
+                .tempogram_candidates_top_n
+                .max(config.tempogram_multi_res_top_k)
+                .max(10);
+
+            match estimate_bpm_tempogram_with_candidates(
+                &magnitude_spec_frames,
+                sample_rate,
+                config.hop_size as u32,
+                config.min_bpm,
+                config.max_bpm,
+                config.bpm_resolution,
+                base_top_n,
+            ) {
+                Ok((base_est, base_cands)) => {
+                    let trap_low = base_est.bpm >= 55.0 && base_est.bpm <= 80.0;
+                    let trap_high = base_est.bpm >= 170.0 && base_est.bpm <= 200.0;
+                    let ambiguous = base_est.confidence < 0.40 || base_est.method_agreement < 2 || trap_low || trap_high;
+
+                    let mut chosen_est = base_est.clone();
+                    let mut chosen_cands = base_cands;
+
+                    if ambiguous {
+                        match multi_resolution_tempogram_from_samples(
+                            &trimmed_samples,
+                            sample_rate,
+                            config.frame_size,
+                            config.min_bpm,
+                            config.max_bpm,
+                            config.bpm_resolution,
+                            config.tempogram_multi_res_top_k,
+                            config.tempogram_multi_res_w512,
+                            config.tempogram_multi_res_w256,
+                            config.tempogram_multi_res_w1024,
+                            config.tempogram_multi_res_structural_discount,
+                            config.tempogram_multi_res_double_time_512_factor,
+                            config.tempogram_multi_res_margin_threshold,
+                            config.tempogram_multi_res_use_human_prior,
+                        ) {
+                            Ok((mr_est, mr_cands_512)) => {
+                                // Choose multi-res only if it provides stronger evidence or
+                                // a safer tempo-family choice in the trap regions.
+                                let rel = if base_est.bpm > 1e-6 {
+                                    (mr_est.bpm / base_est.bpm).max(base_est.bpm / mr_est.bpm)
+                                } else {
+                                    1.0
+                                };
+                                let family_related =
+                                    (rel - 2.0).abs() < 0.05 || (rel - 1.5).abs() < 0.05 || (rel - (4.0 / 3.0)).abs() < 0.05;
+
+                                // Hard safety rule: do not “promote” a sane in-range tempo into an extreme
+                                // high tempo (e.g., 120 -> 240). Multi-res should primarily resolve
+                                // octave *folding* errors, not create them.
+                                let forbid_promote_high = base_est.bpm <= 180.0 && mr_est.bpm > 180.0;
+
+                                let mr_better = !forbid_promote_high
+                                    && (mr_est.confidence >= (base_est.confidence + 0.05)
+                                        || (mr_est.method_agreement > base_est.method_agreement
+                                            && mr_est.confidence >= base_est.confidence * 0.90)
+                                        || ((trap_low || trap_high)
+                                            && family_related
+                                            && mr_est.confidence >= base_est.confidence * 0.88
+                                            // Additional safety: only accept family moves that land in a
+                                            // typical music/DJ tempo band unless base was already extreme.
+                                            && ((mr_est.bpm >= 70.0 && mr_est.bpm <= 180.0) || base_est.bpm > 180.0)));
+
+                                if mr_better {
+                                    chosen_est = mr_est;
+                                    chosen_cands = mr_cands_512;
+                                }
+                            }
+                            Err(e) => {
+                                log::debug!("Multi-resolution escalation skipped (failed): {}", e);
+                            }
+                        }
+                    }
+
+                    if config.emit_tempogram_candidates {
+                        tempogram_candidates = Some(
+                            chosen_cands
+                                .into_iter()
+                                .map(|c| TempoCandidateDebug {
+                                    bpm: c.bpm,
+                                    score: c.score,
+                                    fft_norm: c.fft_norm,
+                                    autocorr_norm: c.autocorr_norm,
+                                    selected: c.selected,
+                                })
+                                .collect(),
+                        );
+                    }
+
+                    log::debug!(
+                        "Tempogram BPM estimate: {:.2} (confidence: {:.3}, method_agreement: {}, multi_res={})",
+                        chosen_est.bpm,
+                        chosen_est.confidence,
+                        chosen_est.method_agreement,
+                        ambiguous
+                    );
+
+                    Some(chosen_est)
+                }
+                Err(e) => {
+                    log::warn!("Tempogram BPM detection failed: {}", e);
+                    None
+                }
+            }
+        } else if config.emit_tempogram_candidates {
             match estimate_bpm_tempogram_with_candidates(
                 &magnitude_spec_frames,
                 sample_rate,

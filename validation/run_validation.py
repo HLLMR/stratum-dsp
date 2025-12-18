@@ -305,6 +305,19 @@ def main():
         action="store_true",
         help="Enable BPM fusion (compute tempogram + legacy in parallel) in the analyze_file binary",
     )
+    parser.add_argument(
+        "--no-tempogram-multi-res",
+        action="store_true",
+        help="Disable true multi-resolution tempogram BPM estimation (use single hop_size only)",
+    )
+    parser.add_argument("--multi-res-top-k", type=int, default=None)
+    parser.add_argument("--multi-res-w512", type=float, default=None)
+    parser.add_argument("--multi-res-w256", type=float, default=None)
+    parser.add_argument("--multi-res-w1024", type=float, default=None)
+    parser.add_argument("--multi-res-structural-discount", type=float, default=None)
+    parser.add_argument("--multi-res-double-time-512-factor", type=float, default=None)
+    parser.add_argument("--multi-res-margin-threshold", type=float, default=None)
+    parser.add_argument("--multi-res-human-prior", action="store_true")
     parser.add_argument("--legacy-preferred-min", type=float, default=None)
     parser.add_argument("--legacy-preferred-max", type=float, default=None)
     parser.add_argument("--legacy-soft-min", type=float, default=None)
@@ -383,6 +396,26 @@ def main():
         extra_args.append("--force-legacy-bpm")
     if args.bpm_fusion:
         extra_args.append("--bpm-fusion")
+    if args.no_tempogram_multi_res:
+        extra_args.append("--no-tempogram-multi-res")
+
+    # Pass-through multi-resolution tuning flags (if provided)
+    if args.multi_res_top_k is not None:
+        extra_args += ["--multi-res-top-k", str(args.multi_res_top_k)]
+    if args.multi_res_w512 is not None:
+        extra_args += ["--multi-res-w512", str(args.multi_res_w512)]
+    if args.multi_res_w256 is not None:
+        extra_args += ["--multi-res-w256", str(args.multi_res_w256)]
+    if args.multi_res_w1024 is not None:
+        extra_args += ["--multi-res-w1024", str(args.multi_res_w1024)]
+    if args.multi_res_structural_discount is not None:
+        extra_args += ["--multi-res-structural-discount", str(args.multi_res_structural_discount)]
+    if args.multi_res_double_time_512_factor is not None:
+        extra_args += ["--multi-res-double-time-512-factor", str(args.multi_res_double_time_512_factor)]
+    if args.multi_res_margin_threshold is not None:
+        extra_args += ["--multi-res-margin-threshold", str(args.multi_res_margin_threshold)]
+    if args.multi_res_human_prior:
+        extra_args.append("--multi-res-human-prior")
 
     # Pass-through tuning flags (if provided)
     if args.legacy_preferred_min is not None:

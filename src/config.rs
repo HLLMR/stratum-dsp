@@ -56,6 +56,39 @@ pub struct AnalysisConfig {
     /// Default: true.
     pub enable_legacy_bpm_guardrails: bool,
 
+    /// Enable **true** multi-resolution tempogram BPM estimation.
+    ///
+    /// When enabled, BPM estimation recomputes STFT at hop sizes {256, 512, 1024} and fuses
+    /// candidates using a cross-resolution scoring rule. This is intended to reduce
+    /// metrical-level (T vs 2T vs T/2) errors.
+    ///
+    /// Default: true (Phase 1F tuning path).
+    pub enable_tempogram_multi_resolution: bool,
+
+    /// Multi-resolution fusion: number of hop=512 candidates to consider as anchors.
+    /// Default: 10.
+    pub tempogram_multi_res_top_k: usize,
+
+    /// Multi-resolution fusion weight for hop=512 (global beat).
+    pub tempogram_multi_res_w512: f32,
+    /// Multi-resolution fusion weight for hop=256 (fine transients).
+    pub tempogram_multi_res_w256: f32,
+    /// Multi-resolution fusion weight for hop=1024 (structural/metre level).
+    pub tempogram_multi_res_w1024: f32,
+
+    /// Structural discount factor applied when hop=1024 supports 2T instead of T.
+    pub tempogram_multi_res_structural_discount: f32,
+
+    /// Factor applied to hop=512 support when evaluating the 2T / T/2 hypotheses.
+    pub tempogram_multi_res_double_time_512_factor: f32,
+
+    /// Minimum score margin (absolute) required to switch between T / 2T / T/2 hypotheses.
+    pub tempogram_multi_res_margin_threshold: f32,
+
+    /// Enable a gentle human-tempo prior as a tie-breaker (only when scores are very close).
+    /// Default: false.
+    pub tempogram_multi_res_use_human_prior: bool,
+
     /// Emit tempogram BPM candidate list (top-N) into `AnalysisMetadata` for validation/tuning.
     ///
     /// Default: false (avoid bloating outputs in normal use).
@@ -143,6 +176,15 @@ impl Default for AnalysisConfig {
             force_legacy_bpm: false,
             enable_bpm_fusion: false,
             enable_legacy_bpm_guardrails: true,
+            enable_tempogram_multi_resolution: true,
+            tempogram_multi_res_top_k: 25,
+            tempogram_multi_res_w512: 0.45,
+            tempogram_multi_res_w256: 0.35,
+            tempogram_multi_res_w1024: 0.20,
+            tempogram_multi_res_structural_discount: 0.85,
+            tempogram_multi_res_double_time_512_factor: 0.92,
+            tempogram_multi_res_margin_threshold: 0.08,
+            tempogram_multi_res_use_human_prior: false,
             emit_tempogram_candidates: false,
             tempogram_candidates_top_n: 10,
             // Tuned defaults (empirical, small-batch): slightly wider preferred band and

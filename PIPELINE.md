@@ -194,6 +194,36 @@ Returns a `BpmEstimate`:
 - `confidence` (derived from separation between best and runner-up scored candidates)
 - `method_agreement` (how often the primary peak aligns with the chosen BPM)
 
+#### 3.2.6 True multi-resolution tempogram (gated escalation)
+
+**Files**:
+- `src/features/period/multi_resolution.rs` (true multi-res implementation)
+- `src/lib.rs` (gating + acceptance logic)
+
+**Why**: The dominant empirical failure mode is metrical-level ambiguity (e.g., \(T\) vs \(2T\) vs \(T/2\)).
+True multi-resolution (recompute STFT at multiple hop sizes) is a classic discriminator for these octave-family errors.
+
+**What happens** (high level):
+- Always compute a **base** tempogram estimate at the configured hop size (typically 512).
+- If the base estimate looks ambiguous (low confidence / low agreement, or falls in known “trap” tempo ranges),
+  we **escalate** to true multi-resolution:
+  - Recompute STFT magnitudes at **hop sizes {256, 512, 1024}**
+  - Run the same tempogram pipeline at each hop
+  - Fuse candidates using a cross-resolution scoring rule to decide whether to keep \(T\) or fold to a tempo-family member
+
+**Important safety rule** (prevents regressions observed during tuning):
+- We do **not** allow “upward promotion” from an in-range tempo to an extreme high tempo
+  (e.g., \(120 \rightarrow 240\)). Multi-res is used to correct likely octave-folding errors, not create them.
+
+**Primary knobs** (via `AnalysisConfig` / CLI):
+- `enable_tempogram_multi_resolution` (CLI: `--no-tempogram-multi-res` to disable)
+- `tempogram_multi_res_top_k` (CLI: `--multi-res-top-k N`)
+- `tempogram_multi_res_w512`, `tempogram_multi_res_w256`, `tempogram_multi_res_w1024`
+- `tempogram_multi_res_structural_discount`
+- `tempogram_multi_res_double_time_512_factor`
+- `tempogram_multi_res_margin_threshold`
+- `tempogram_multi_res_use_human_prior` (CLI: `--multi-res-human-prior`)
+
 ### 3.3 Phase 1B legacy BPM estimation (fallback path)
 
 **Entry point**: `estimate_bpm(onsets, sample_rate, hop_size, min_bpm, max_bpm, bpm_resolution)`  
@@ -225,6 +255,7 @@ The following modes exist to support validation and controlled experiments:
 - **Force legacy BPM**: `force_legacy_bpm=true` (CLI: `--force-legacy-bpm`)
 - **BPM fusion (validator)**: `enable_bpm_fusion=true` (CLI: `--bpm-fusion`)
   - Current behavior: **does not override** the tempogram BPM; it only adjusts the BPM confidence and emits diagnostics based on legacy agreement.
+- **Disable true multi-resolution tempogram**: `enable_tempogram_multi_resolution=false` (CLI: `--no-tempogram-multi-res`)
 - **Legacy guardrails**: `enable_legacy_bpm_guardrails=true`
   - Applies configurable confidence multipliers to legacy candidates to discourage extreme tempos from winning.
 

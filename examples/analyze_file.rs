@@ -176,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
+        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
         std::process::exit(1);
     }
     
@@ -190,6 +190,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force_legacy_bpm = args.contains(&"--force-legacy-bpm".to_string());
     let bpm_fusion = args.contains(&"--bpm-fusion".to_string());
     let bpm_candidates = args.contains(&"--bpm-candidates".to_string());
+    let no_tempogram_multi_res = args.contains(&"--no-tempogram-multi-res".to_string());
+    let multi_res_human_prior = args.contains(&"--multi-res-human-prior".to_string());
 
     fn arg_value(args: &[String], name: &str) -> Option<String> {
         args.iter()
@@ -249,6 +251,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(n) = parse_usize(&args, "--bpm-candidates-top") {
         config.emit_tempogram_candidates = true;
         config.tempogram_candidates_top_n = n;
+    }
+
+    // Multi-resolution tempogram tuning (Phase 1F)
+    if no_tempogram_multi_res {
+        config.enable_tempogram_multi_resolution = false;
+    }
+    if let Some(n) = parse_usize(&args, "--multi-res-top-k") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_top_k = n;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-w512") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_w512 = v;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-w256") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_w256 = v;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-w1024") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_w1024 = v;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-structural-discount") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_structural_discount = v;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-double-time-512-factor") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_double_time_512_factor = v;
+    }
+    if let Some(v) = parse_f32(&args, "--multi-res-margin-threshold") {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_margin_threshold = v;
+    }
+    if multi_res_human_prior {
+        config.enable_tempogram_multi_resolution = true;
+        config.tempogram_multi_res_use_human_prior = true;
     }
 
     // Optional tuning overrides for legacy BPM guardrails (confidence multipliers by tempo range)
