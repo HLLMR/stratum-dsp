@@ -6,7 +6,7 @@ authors = ["HLLMR"]
 description = "Professional-grade audio analysis engine for DJ applications: BPM detection, key detection, and beat tracking"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/HLLMR/stratum-dsp"
-keywords = ["audio", "dsp", "bpm", "key-detection", "beat-tracking", "dj"]
+keywords = ["audio", "dsp", "bpm", "key-detection", "beat-tracking"]
 categories = ["multimedia::audio", "science::audio"]
 readme = "README.md"
 
