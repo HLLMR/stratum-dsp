@@ -2,6 +2,8 @@
 
 [![Crates.io](https://img.shields.io/crates/v/stratum-dsp.svg)](https://crates.io/crates/stratum-dsp)
 [![Docs.rs](https://docs.rs/stratum-dsp/badge.svg)](https://docs.rs/stratum-dsp)
+[![Downloads](https://img.shields.io/crates/d/stratum-dsp.svg)](https://crates.io/crates/stratum-dsp)
+[![CI](https://github.com/HLLMR/stratum-dsp/workflows/CI/badge.svg)](https://github.com/HLLMR/stratum-dsp/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 
