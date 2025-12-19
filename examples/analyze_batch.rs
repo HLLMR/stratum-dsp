@@ -8,10 +8,10 @@
 //! - Default workers: (available CPU threads - 1), keeping one core free for the system.
 
 use rayon::prelude::*;
-use stratum_dsp::{analyze_audio, compute_confidence, AnalysisConfig};
 use std::env;
 use std::fs::File;
 use std::time::Instant;
+use stratum_dsp::{analyze_audio, compute_confidence, AnalysisConfig};
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -32,7 +32,10 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         hint.with_extension(ext);
     }
 
@@ -89,9 +92,7 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
-                                    (0..channels)
-                                        .map(|ch| buf.chan(ch)[i] as f32)
-                                        .sum::<f32>()
+                                    (0..channels).map(|ch| buf.chan(ch)[i] as f32).sum::<f32>()
                                         / channels as f32
                                 })
                                 .collect()
@@ -130,7 +131,10 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                     }
                     AudioBufferRef::S32(buf) => {
                         if channels == 1 {
-                            buf.chan(0).iter().map(|&s| s as f32 / 2147483648.0).collect()
+                            buf.chan(0)
+                                .iter()
+                                .map(|&s| s as f32 / 2147483648.0)
+                                .collect()
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
@@ -179,7 +183,9 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
 }
 
 fn default_jobs() -> usize {
-    let n = std::thread::available_parallelism().map(|v| v.get()).unwrap_or(1);
+    let n = std::thread::available_parallelism()
+        .map(|v| v.get())
+        .unwrap_or(1);
     std::cmp::max(1, n.saturating_sub(1))
 }
 
@@ -276,10 +282,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     key: res.key.name().to_string(),
                                     key_conf: conf.key_confidence,
                                     processing_ms: res.metadata.processing_time_ms,
-                                    tempogram_multi_res_triggered: res.metadata.tempogram_multi_res_triggered,
+                                    tempogram_multi_res_triggered: res
+                                        .metadata
+                                        .tempogram_multi_res_triggered,
                                     tempogram_multi_res_used: res.metadata.tempogram_multi_res_used,
-                                    tempogram_percussive_triggered: res.metadata.tempogram_percussive_triggered,
-                                    tempogram_percussive_used: res.metadata.tempogram_percussive_used,
+                                    tempogram_percussive_triggered: res
+                                        .metadata
+                                        .tempogram_percussive_triggered,
+                                    tempogram_percussive_used: res
+                                        .metadata
+                                        .tempogram_percussive_used,
                                     error: None,
                                 }
                             }
@@ -368,7 +380,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let ok_times: Vec<f32> = outs.iter().filter(|o| o.ok).map(|o| o.processing_ms).collect();
+    let ok_times: Vec<f32> = outs
+        .iter()
+        .filter(|o| o.ok)
+        .map(|o| o.processing_ms)
+        .collect();
     let wall = t0.elapsed();
     let wall_ms = wall.as_secs_f64() * 1000.0;
 
@@ -392,5 +408,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-

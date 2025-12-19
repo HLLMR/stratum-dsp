@@ -3,9 +3,9 @@
 //! This example demonstrates how to analyze an audio file and print the results.
 //! Can be used as a CLI tool for validation scripts.
 
-use stratum_dsp::{analyze_audio, AnalysisConfig, compute_confidence};
 use std::env;
 use std::fs::File;
+use stratum_dsp::{analyze_audio, compute_confidence, AnalysisConfig};
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -26,52 +26,53 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
     // Open the media source
     let src = File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
-    
+
     // Create a probe hint using the file extension
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         hint.with_extension(ext);
     }
-    
+
     // Use the default probe to get the format
     let meta_opts: MetadataOptions = Default::default();
     let fmt_opts: FormatOptions = Default::default();
-    
+
     let probed = get_probe().format(&hint, mss, &fmt_opts, &meta_opts)?;
     let mut format = probed.format;
-    
+
     // Get the default track
     let track = format
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
         .ok_or("No supported audio tracks found")?;
-    
+
     let track_id = track.id;
-    let mut decoder = symphonia::default::get_codecs().make(
-        &track.codec_params,
-        &DecoderOptions::default(),
-    )?;
-    
+    let mut decoder =
+        symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
+
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
     let mut all_samples = Vec::new();
-    
+
     // Decode all samples
     loop {
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             Err(_) => break,
         };
-        
+
         if packet.track_id() != track_id {
             continue;
         }
-        
+
         match decoder.decode(&packet) {
             Ok(decoded) => {
                 let spec = *decoded.spec();
                 let channels = spec.channels.count();
-                
+
                 // Convert to f32 samples and mix to mono
                 let samples_f32: Vec<f32> = match decoded {
                     AudioBufferRef::F32(buf) => {
@@ -81,9 +82,8 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                             // Mix to mono
                             (0..buf.frames())
                                 .map(|i| {
-                                    (0..channels)
-                                        .map(|ch| buf.chan(ch)[i])
-                                        .sum::<f32>() / channels as f32
+                                    (0..channels).map(|ch| buf.chan(ch)[i]).sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
@@ -94,9 +94,8 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
-                                    (0..channels)
-                                        .map(|ch| buf.chan(ch)[i] as f32)
-                                        .sum::<f32>() / channels as f32
+                                    (0..channels).map(|ch| buf.chan(ch)[i] as f32).sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
@@ -109,46 +108,59 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                                 .map(|i| {
                                     (0..channels)
                                         .map(|ch| buf.chan(ch)[i] as f32 / 32768.0)
-                                        .sum::<f32>() / channels as f32
+                                        .sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
                     }
                     AudioBufferRef::S24(buf) => {
                         if channels == 1 {
-                            buf.chan(0).iter().map(|&s| i24_to_f32(s) / 8388608.0).collect()
+                            buf.chan(0)
+                                .iter()
+                                .map(|&s| i24_to_f32(s) / 8388608.0)
+                                .collect()
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
                                     (0..channels)
                                         .map(|ch| i24_to_f32(buf.chan(ch)[i]) / 8388608.0)
-                                        .sum::<f32>() / channels as f32
+                                        .sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
                     }
                     AudioBufferRef::S32(buf) => {
                         if channels == 1 {
-                            buf.chan(0).iter().map(|&s| s as f32 / 2147483648.0).collect()
+                            buf.chan(0)
+                                .iter()
+                                .map(|&s| s as f32 / 2147483648.0)
+                                .collect()
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
                                     (0..channels)
                                         .map(|ch| buf.chan(ch)[i] as f32 / 2147483648.0)
-                                        .sum::<f32>() / channels as f32
+                                        .sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
                     }
                     AudioBufferRef::U8(buf) => {
                         if channels == 1 {
-                            buf.chan(0).iter().map(|&s| (s as f32 - 128.0) / 128.0).collect()
+                            buf.chan(0)
+                                .iter()
+                                .map(|&s| (s as f32 - 128.0) / 128.0)
+                                .collect()
                         } else {
                             (0..buf.frames())
                                 .map(|i| {
                                     (0..channels)
                                         .map(|ch| (buf.chan(ch)[i] as f32 - 128.0) / 128.0)
-                                        .sum::<f32>() / channels as f32
+                                        .sum::<f32>()
+                                        / channels as f32
                                 })
                                 .collect()
                         }
@@ -158,7 +170,7 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
                         return Err("Unsupported audio format".into());
                     }
                 };
-                
+
                 all_samples.extend(samples_f32);
             }
             Err(symphonia::core::errors::Error::DecodeError(_)) => {
@@ -168,18 +180,18 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
             Err(e) => return Err(Box::new(e)),
         }
     }
-    
+
     Ok((all_samples, sample_rate))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    
+
     if args.len() < 2 {
         eprintln!("Usage: {} <audio_file> [--json] [--debug] [--debug-track-id ID] [--debug-gt-bpm X] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--no-tempogram-percussive] [--no-tempogram-band-fusion] [--band-score-fusion] [--no-tempogram-mel-novelty] [--mel-n-mels N] [--mel-fmin-hz X] [--mel-fmax-hz X] [--mel-max-filter-bins N] [--mel-weight X] [--novelty-w-spectral X] [--novelty-w-energy X] [--novelty-w-hfc X] [--novelty-local-mean-window N] [--novelty-smooth-window N] [--band-low-max-hz X] [--band-mid-max-hz X] [--band-high-max-hz X] [--band-w-full X] [--band-w-low X] [--band-w-mid X] [--band-w-high X] [--band-support-threshold X] [--band-consensus-bonus X] [--superflux-max-filter-bins N] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X] [--no-key-harmonic-mask] [--key-harmonic-mask-power X] [--key-hpss] [--no-key-hpss] [--key-hpss-frame-step N] [--key-hpss-time-margin N] [--key-hpss-freq-margin N] [--key-hpss-mask-power X] [--no-key-tuning] [--key-tuning-max-semitones X] [--key-tuning-frame-step N] [--key-tuning-peak-rel-threshold X] [--no-key-edge-trim] [--key-edge-trim-fraction X] [--no-key-segment-voting] [--key-segment-len-frames N] [--key-segment-hop-frames N] [--key-segment-min-clarity X] [--key-mode-heuristic] [--no-key-mode-heuristic] [--key-mode-third-margin X] [--key-mode-flip-min-score-ratio X] [--key-minor-harmonic-bonus] [--no-key-minor-harmonic-bonus] [--key-minor-leading-tone-bonus-weight X] [--key-hpcp] [--key-hpcp-peaks N] [--key-hpcp-harmonics N] [--key-hpcp-harmonic-decay X] [--key-hpcp-mag-power X] [--no-key-hpcp-bass] [--key-hpcp-bass-fmin-hz X] [--key-hpcp-bass-fmax-hz X] [--key-hpcp-bass-weight X] [--no-key-spec-smooth] [--key-spec-smooth-margin N] [--no-key-frame-weighting] [--key-min-tonalness X] [--key-tonalness-power X] [--key-energy-power X]", args[0]);
         std::process::exit(1);
     }
-    
+
     let audio_file = &args[1];
     let json_output = args.contains(&"--json".to_string());
     let debug_mode = args.contains(&"--debug".to_string());
@@ -230,23 +242,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let debug_track_id = arg_value(&args, "--debug-track-id").and_then(|v| v.parse::<u32>().ok());
     let debug_gt_bpm = arg_value(&args, "--debug-gt-bpm").and_then(|v| v.parse::<f32>().ok());
-    
+
     // Initialize logger - set debug level if requested or if RUST_LOG is set
-    let filter = if debug_mode {
-        "debug"
-    } else {
-        "info"
-    };
+    let filter = if debug_mode { "debug" } else { "info" };
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter)).init();
-    
+
     // Decode audio file
     let (samples, sample_rate) = decode_audio_file(audio_file)?;
-    
+
     if samples.is_empty() {
         eprintln!("ERROR: No audio samples decoded from file");
         std::process::exit(1);
     }
-    
+
     // Configure analysis
     let mut config = AnalysisConfig::default();
     if no_preprocess {
@@ -384,7 +392,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.key_template_set = stratum_dsp::features::key::templates::TemplateSet::Temperley;
     }
     if args.contains(&"--key-template-kk".to_string()) {
-        config.key_template_set = stratum_dsp::features::key::templates::TemplateSet::KrumhanslKessler;
+        config.key_template_set =
+            stratum_dsp::features::key::templates::TemplateSet::KrumhanslKessler;
     }
 
     // Key ensemble detection (combine K-K and Temperley templates)
@@ -686,15 +695,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = parse_f32(&args, "--legacy-mul-extreme") {
         config.legacy_bpm_conf_mul_extreme = v;
     }
-    
+
     if debug_mode {
         println!("=== DEBUG MODE ===");
         println!("Audio file: {}", audio_file);
-        println!("Samples: {}, Sample rate: {} Hz", samples.len(), sample_rate);
-        println!("Duration: {:.2} seconds", samples.len() as f32 / sample_rate as f32);
+        println!(
+            "Samples: {}, Sample rate: {} Hz",
+            samples.len(),
+            sample_rate
+        );
+        println!(
+            "Duration: {:.2} seconds",
+            samples.len() as f32 / sample_rate as f32
+        );
         println!();
     }
-    
+
     // Analyze
     let result = match analyze_audio(&samples, sample_rate, config) {
         Ok(r) => r,
@@ -703,10 +719,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    
+
     // Compute confidence scores
     let confidence = compute_confidence(&result);
-    
+
     // Output results
     if json_output {
         // JSON output for parsing by validation scripts
@@ -718,16 +734,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  \"key_clarity\": {:.2},", result.key_clarity);
         println!("  \"grid_stability\": {:.2},", result.grid_stability);
         if let Some(v) = result.metadata.tempogram_multi_res_triggered {
-            println!("  \"tempogram_multi_res_triggered\": {},", if v { "true" } else { "false" });
+            println!(
+                "  \"tempogram_multi_res_triggered\": {},",
+                if v { "true" } else { "false" }
+            );
         }
         if let Some(v) = result.metadata.tempogram_multi_res_used {
-            println!("  \"tempogram_multi_res_used\": {},", if v { "true" } else { "false" });
+            println!(
+                "  \"tempogram_multi_res_used\": {},",
+                if v { "true" } else { "false" }
+            );
         }
         if let Some(v) = result.metadata.tempogram_percussive_triggered {
-            println!("  \"tempogram_percussive_triggered\": {},", if v { "true" } else { "false" });
+            println!(
+                "  \"tempogram_percussive_triggered\": {},",
+                if v { "true" } else { "false" }
+            );
         }
         if let Some(v) = result.metadata.tempogram_percussive_used {
-            println!("  \"tempogram_percussive_used\": {},", if v { "true" } else { "false" });
+            println!(
+                "  \"tempogram_percussive_used\": {},",
+                if v { "true" } else { "false" }
+            );
         }
         if let Some(cands) = result.metadata.tempogram_candidates.as_ref() {
             println!("  \"bpm_candidates\": [");
@@ -745,19 +773,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("  ],");
         }
-        println!("  \"processing_time_ms\": {:.2}", result.metadata.processing_time_ms);
+        println!(
+            "  \"processing_time_ms\": {:.2}",
+            result.metadata.processing_time_ms
+        );
         println!("}}");
     } else {
         // Human-readable output
         println!("Analysis Results:");
-        println!("  BPM: {:.2} (confidence: {:.2})", result.bpm, confidence.bpm_confidence);
-        println!("  Key: {} (confidence: {:.2}, clarity: {:.2})", 
-                 result.key.name(), 
-                 confidence.key_confidence,
-                 result.key_clarity);
+        println!(
+            "  BPM: {:.2} (confidence: {:.2})",
+            result.bpm, confidence.bpm_confidence
+        );
+        println!(
+            "  Key: {} (confidence: {:.2}, clarity: {:.2})",
+            result.key.name(),
+            confidence.key_confidence,
+            result.key_clarity
+        );
         println!("  Grid stability: {:.2}", result.grid_stability);
-        println!("  Processing time: {:.2} ms", result.metadata.processing_time_ms);
+        println!(
+            "  Processing time: {:.2} ms",
+            result.metadata.processing_time_ms
+        );
     }
-    
+
     Ok(())
 }
