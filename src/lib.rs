@@ -916,20 +916,228 @@ pub fn analyze_audio(
     // Phase 1D: Key Detection
     let (key, key_confidence, key_clarity) = if trimmed_samples.len() >= config.frame_size {
         // Extract chroma vectors with configurable options
-        use features::chroma::extractor::extract_chroma_with_options;
+        //
+        // IMPORTANT: We already computed the STFT magnitudes for tempogram BPM. Reuse them here
+        // to avoid a second STFT pass (and to enable spectrogram-domain conditioning for key).
+        use features::chroma::extractor::{
+            convert_linear_to_log_frequency_spectrogram,
+            extract_beat_synchronous_chroma,
+            extract_chroma_from_log_frequency_spectrogram,
+            extract_chroma_from_spectrogram_with_options_and_energy,
+            extract_chroma_from_spectrogram_with_options_and_energy_tuned,
+            extract_hpcp_from_spectrogram_with_options_and_energy_tuned,
+            extract_hpcp_bass_blend_from_spectrogram_with_options_and_energy_tuned,
+            estimate_tuning_offset_semitones_from_spectrogram,
+            harmonic_spectrogram_hpss_median_mask,
+            harmonic_spectrogram_time_mask,
+            smooth_spectrogram_time,
+        };
         use features::chroma::normalization::sharpen_chroma;
         use features::chroma::smoothing::smooth_chroma;
-        use features::key::{detect_key, compute_key_clarity, KeyTemplates};
+        use features::key::{
+            compute_key_clarity, detect_key_ensemble, detect_key_multi_scale, detect_key_weighted, detect_key_weighted_mode_heuristic,
+            KeyDetectionResult, KeyTemplates,
+        };
         
-        match extract_chroma_with_options(
-            &trimmed_samples,
-            sample_rate,
-            config.frame_size,
-            config.hop_size,
-            config.soft_chroma_mapping,
-            config.soft_mapping_sigma,
-        ) {
-            Ok(mut chroma_vectors) => {
+        // Key-only STFT override (optional): allow higher frequency resolution for key detection.
+        let key_fft_size = if config.enable_key_stft_override {
+            config.key_stft_frame_size.max(256)
+        } else {
+            config.frame_size
+        };
+        let key_hop_size = if config.enable_key_stft_override {
+            config.key_stft_hop_size.max(1)
+        } else {
+            config.hop_size
+        };
+
+        let key_spec_frames = if config.enable_key_stft_override {
+            match compute_stft(&trimmed_samples, key_fft_size, key_hop_size) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Key-only STFT override failed: {}, falling back to shared STFT", e);
+                    magnitude_spec_frames.clone()
+                }
+            }
+        } else {
+            magnitude_spec_frames.clone()
+        };
+
+        // Key-only spectrogram conditioning: suppress percussive broadband transients.
+        let spec_for_key = if !key_spec_frames.is_empty() {
+            if config.enable_key_hpss_harmonic {
+                match harmonic_spectrogram_hpss_median_mask(
+                    &key_spec_frames,
+                    sample_rate,
+                    key_fft_size,
+                    100.0,
+                    5000.0,
+                    config.key_hpss_frame_step,
+                    config.key_hpss_time_margin,
+                    config.key_hpss_freq_margin,
+                    config.key_hpss_mask_power,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Key HPSS harmonic mask failed: {}, falling back", e);
+                        key_spec_frames.clone()
+                    }
+                }
+            } else if config.enable_key_harmonic_mask {
+                match harmonic_spectrogram_time_mask(
+                    &key_spec_frames,
+                    config.key_spectrogram_smooth_margin,
+                    config.key_harmonic_mask_power,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Key harmonic mask failed: {}, falling back", e);
+                        key_spec_frames.clone()
+                    }
+                }
+            } else if config.enable_key_spectrogram_time_smoothing {
+                match smooth_spectrogram_time(&key_spec_frames, config.key_spectrogram_smooth_margin) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Key spectrogram time smoothing failed: {}, using raw spectrogram", e);
+                        key_spec_frames.clone()
+                    }
+                }
+            } else {
+                key_spec_frames.clone()
+            }
+        } else {
+            key_spec_frames.clone()
+        };
+
+        // Optional: convert to log-frequency (semitone-aligned) spectrogram for key detection.
+        // When enabled, HPCP is disabled (HPCP requires frequency information for harmonic summation).
+        let (use_log_freq, log_freq_spec, semitone_offset) = if config.enable_key_log_frequency && !spec_for_key.is_empty() {
+            match convert_linear_to_log_frequency_spectrogram(
+                &spec_for_key,
+                sample_rate,
+                key_fft_size,
+                100.0,
+                5000.0,
+            ) {
+                Ok(log_spec) => {
+                    // Compute semitone offset of first bin
+                    let fmin: f32 = 100.0;
+                    let semitone_min: f32 = 12.0 * (fmin / 440.0).log2() + 57.0;
+                    let semitone_bin_min = semitone_min.floor() as i32;
+                    (true, log_spec, semitone_bin_min)
+                }
+                Err(e) => {
+                    log::warn!("Key log-frequency conversion failed: {}, falling back to linear", e);
+                    (false, vec![], 0)
+                }
+            }
+        } else {
+            (false, vec![], 0)
+        };
+
+        // Optional: estimate tuning offset (in semitones) and apply during chroma mapping.
+        // Note: tuning estimation still uses linear spectrogram (before log-freq conversion).
+        let tuning_offset = if config.enable_key_tuning_compensation && !spec_for_key.is_empty() && !use_log_freq {
+            match estimate_tuning_offset_semitones_from_spectrogram(
+                &spec_for_key,
+                sample_rate,
+                key_fft_size,
+                80.0,
+                2000.0,
+                config.key_tuning_frame_step,
+                config.key_tuning_peak_rel_threshold,
+            ) {
+                Ok(d) => d.clamp(
+                    -config.key_tuning_max_abs_semitones.abs(),
+                    config.key_tuning_max_abs_semitones.abs(),
+                ),
+                Err(e) => {
+                    log::warn!("Key tuning estimation failed: {}", e);
+                    0.0
+                }
+            }
+        } else {
+            0.0
+        };
+
+        let chroma_call = if config.enable_key_beat_synchronous && !beat_grid.beats.is_empty() && !use_log_freq {
+            // Beat-synchronous chroma: align chroma windows to beat boundaries
+            extract_beat_synchronous_chroma(
+                &spec_for_key,
+                sample_rate,
+                key_fft_size,
+                key_hop_size,
+                &beat_grid.beats,
+                config.soft_chroma_mapping,
+                config.soft_mapping_sigma,
+                tuning_offset,
+            )
+        } else if use_log_freq {
+            // Extract chroma from log-frequency spectrogram (each bin is already a semitone)
+            extract_chroma_from_log_frequency_spectrogram(&log_freq_spec, semitone_offset)
+                .map(|chroma_vecs| {
+                    // Compute frame energies from log-frequency spectrogram
+                    let energies: Vec<f32> = log_freq_spec
+                        .iter()
+                        .map(|frame| frame.iter().map(|&x| x * x).sum())
+                        .collect();
+                    (chroma_vecs, energies)
+                })
+        } else if config.enable_key_hpcp {
+            if config.enable_key_hpcp_bass_blend {
+                extract_hpcp_bass_blend_from_spectrogram_with_options_and_energy_tuned(
+                    &spec_for_key,
+                    sample_rate,
+                    key_fft_size,
+                    config.soft_mapping_sigma,
+                    tuning_offset,
+                    config.key_hpcp_peaks_per_frame,
+                    config.key_hpcp_num_harmonics,
+                    config.key_hpcp_harmonic_decay,
+                    config.key_hpcp_mag_power,
+                    config.enable_key_hpcp_whitening,
+                    config.key_hpcp_whitening_smooth_bins,
+                    config.key_hpcp_bass_fmin_hz,
+                    config.key_hpcp_bass_fmax_hz,
+                    config.key_hpcp_bass_weight,
+                )
+            } else {
+                extract_hpcp_from_spectrogram_with_options_and_energy_tuned(
+                    &spec_for_key,
+                    sample_rate,
+                    key_fft_size,
+                    config.soft_mapping_sigma,
+                    tuning_offset,
+                    config.key_hpcp_peaks_per_frame,
+                    config.key_hpcp_num_harmonics,
+                    config.key_hpcp_harmonic_decay,
+                    config.key_hpcp_mag_power,
+                    config.enable_key_hpcp_whitening,
+                    config.key_hpcp_whitening_smooth_bins,
+                )
+            }
+        } else if config.enable_key_tuning_compensation && tuning_offset.abs() > 1e-6 {
+            extract_chroma_from_spectrogram_with_options_and_energy_tuned(
+                &spec_for_key,
+                sample_rate,
+                key_fft_size,
+                config.soft_chroma_mapping,
+                config.soft_mapping_sigma,
+                tuning_offset,
+            )
+        } else {
+            extract_chroma_from_spectrogram_with_options_and_energy(
+                &spec_for_key,
+                sample_rate,
+                key_fft_size,
+                config.soft_chroma_mapping,
+                config.soft_mapping_sigma,
+            )
+        };
+
+        match chroma_call {
+            Ok((mut chroma_vectors, frame_energies)) => {
                 // Apply chroma sharpening if enabled (power > 1.0)
                 if config.chroma_sharpening_power > 1.0 {
                     for chroma in &mut chroma_vectors {
@@ -942,16 +1150,299 @@ pub fn analyze_audio(
                 if chroma_vectors.len() > 5 {
                     chroma_vectors = smooth_chroma(&chroma_vectors, 5);
                 }
+
+                // Optional edge trimming: remove intro/outro frames (often beat-only / percussive),
+                // focusing key detection on the more harmonically informative middle section.
+                let (chroma_slice, energy_slice): (&[Vec<f32>], &[f32]) = if config.enable_key_edge_trim
+                    && chroma_vectors.len() == frame_energies.len()
+                    && chroma_vectors.len() >= 200
+                {
+                    let frac = config.key_edge_trim_fraction.clamp(0.0, 0.49);
+                    let n = chroma_vectors.len();
+                    let start = ((n as f32) * frac).round() as usize;
+                    let end = ((n as f32) * (1.0 - frac)).round() as usize;
+                    if end > start + 50 && end <= n {
+                        (&chroma_vectors[start..end], &frame_energies[start..end])
+                    } else {
+                        (&chroma_vectors[..], &frame_energies[..])
+                    }
+                } else {
+                    (&chroma_vectors[..], &frame_energies[..])
+                };
+
+                // Build per-frame weights (optional): normalize energy by median, combine with tonalness.
+                fn chroma_tonalness(chroma: &[f32]) -> f32 {
+                    let sum: f32 = chroma.iter().sum();
+                    if sum <= 1e-12 {
+                        return 0.0;
+                    }
+                    let mut entropy = 0.0f32;
+                    for &x in chroma {
+                        let p = x / sum;
+                        if p > 1e-12 {
+                            entropy -= p * p.ln();
+                        }
+                    }
+                    let max_entropy = (12.0f32).ln();
+                    let t = 1.0 - (entropy / max_entropy);
+                    t.clamp(0.0, 1.0)
+                }
                 
-                // Detect key using Krumhansl-Kessler templates
-                let templates = KeyTemplates::new();
-                match detect_key(&chroma_vectors, &templates) {
+                let mut frame_weights: Option<Vec<f32>> = if config.enable_key_frame_weighting
+                    && !energy_slice.is_empty()
+                    && energy_slice.len() == chroma_slice.len()
+                {
+                    // Median energy for scale normalization.
+                    let mut sorted = energy_slice.to_vec();
+                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let median = sorted[sorted.len() / 2].max(1e-12);
+
+                    let mut weights = Vec::with_capacity(chroma_slice.len());
+                    for (ch, &e) in chroma_slice.iter().zip(energy_slice.iter()) {
+                        let tonal = chroma_tonalness(ch);
+                        let tonal = if tonal < config.key_min_tonalness { 0.0 } else { tonal };
+                        let e_norm = (e / median).max(0.0);
+                        let w_t = tonal.powf(config.key_tonalness_power.max(0.0));
+                        let w_e = e_norm.powf(config.key_energy_power.max(0.0));
+                        weights.push((w_t * w_e).max(0.0));
+                    }
+                    Some(weights)
+                } else {
+                    None
+                };
+
+                // Safety: if weighting zeroes out essentially everything, fall back to unweighted.
+                if let Some(w) = frame_weights.as_ref() {
+                    let sum_w: f32 = w.iter().sum();
+                    let used = w.iter().filter(|&&x| x > 0.0).count();
+                    if sum_w <= 1e-12 || used < 10 {
+                        frame_weights = None;
+                    }
+                }
+
+                // Optional: ensemble key detection (combine K-K and Temperley template scores).
+                let key_call: Result<KeyDetectionResult, AnalysisError> = if config.enable_key_ensemble {
+                    detect_key_ensemble(
+                        chroma_slice,
+                        frame_weights.as_deref(),
+                        config.key_ensemble_kk_weight,
+                        config.key_ensemble_temperley_weight,
+                    )
+                // Optional: multi-scale key detection (ensemble voting across multiple time scales).
+                } else {
+                    // Detect key using templates (selected template set)
+                    let templates = KeyTemplates::new_with_template_set(config.key_template_set);
+                    
+                    if config.enable_key_multi_scale
+                        && !config.key_multi_scale_lengths.is_empty()
+                        && chroma_slice.len() >= *config.key_multi_scale_lengths.iter().min().unwrap_or(&1)
+                    {
+                        detect_key_multi_scale(
+                            chroma_slice,
+                            &templates,
+                            frame_weights.as_deref(),
+                            &config.key_multi_scale_lengths,
+                            config.key_multi_scale_hop.max(1),
+                            config.key_multi_scale_min_clarity.clamp(0.0, 1.0),
+                            if config.key_multi_scale_weights.is_empty() {
+                                None
+                            } else {
+                                Some(&config.key_multi_scale_weights)
+                            },
+                            config.enable_key_mode_heuristic,
+                            config.key_mode_third_ratio_margin,
+                            if config.enable_key_mode_heuristic {
+                                config.key_mode_flip_min_score_ratio
+                            } else {
+                                0.0
+                            },
+                            config.enable_key_minor_harmonic_bonus,
+                            config.key_minor_leading_tone_bonus_weight,
+                        )
+                    // Optional: segment voting (windowed detection + clarity-weighted score accumulation).
+                    } else if config.enable_key_segment_voting
+                    && chroma_slice.len() >= config.key_segment_len_frames.max(1)
+                    && config.key_segment_len_frames >= 120
+                    && config.key_segment_hop_frames >= 1
+                {
+                    let seg_len = config.key_segment_len_frames.min(chroma_slice.len());
+                    let hop = config.key_segment_hop_frames.min(seg_len).max(1);
+                    let min_clarity = config.key_segment_min_clarity.clamp(0.0, 1.0);
+
+                    let mut acc_scores: Vec<(Key, f32)> = Vec::with_capacity(24);
+                    // init score table
+                    for k in 0..12 {
+                        acc_scores.push((Key::Major(k as u32), 0.0));
+                    }
+                    for k in 0..12 {
+                        acc_scores.push((Key::Minor(k as u32), 0.0));
+                    }
+
+                    let mut used_segments = 0usize;
+                    let mut start = 0usize;
+                    while start + seg_len <= chroma_slice.len() {
+                        let seg = &chroma_slice[start..start + seg_len];
+                        let wseg = frame_weights
+                            .as_ref()
+                            .map(|w| &w[start..start + seg_len]);
+                        let seg_res = if config.enable_key_mode_heuristic || config.enable_key_minor_harmonic_bonus {
+                            detect_key_weighted_mode_heuristic(
+                                seg,
+                                &templates,
+                                wseg,
+                                config.key_mode_third_ratio_margin,
+                                if config.enable_key_mode_heuristic {
+                                    config.key_mode_flip_min_score_ratio
+                                } else {
+                                    0.0
+                                },
+                                config.enable_key_minor_harmonic_bonus,
+                                config.key_minor_leading_tone_bonus_weight,
+                            )?
+                        } else {
+                            detect_key_weighted(seg, &templates, wseg)?
+                        };
+                        let seg_clarity = compute_key_clarity(&seg_res.all_scores);
+                        if seg_clarity >= min_clarity {
+                            used_segments += 1;
+                            // Add all scores, weighted by clarity
+                            for (k, s) in seg_res.all_scores.iter() {
+                                if let Some((_kk, dst)) = acc_scores.iter_mut().find(|(kk, _)| kk == k) {
+                                    *dst += *s * seg_clarity;
+                                }
+                            }
+                        }
+                        start += hop;
+                    }
+
+                    if used_segments == 0 {
+                        if config.enable_key_mode_heuristic || config.enable_key_minor_harmonic_bonus {
+                            detect_key_weighted_mode_heuristic(
+                                chroma_slice,
+                                &templates,
+                                frame_weights.as_deref(),
+                                config.key_mode_third_ratio_margin,
+                                if config.enable_key_mode_heuristic {
+                                    config.key_mode_flip_min_score_ratio
+                                } else {
+                                    0.0
+                                },
+                                config.enable_key_minor_harmonic_bonus,
+                                config.key_minor_leading_tone_bonus_weight,
+                            )
+                        } else {
+                            detect_key_weighted(chroma_slice, &templates, frame_weights.as_deref())
+                        }
+                    } else {
+                        // Sort accumulated scores and build a KeyDetectionResult.
+                        acc_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                        let (best_key, best_score) = acc_scores[0];
+                        let second_score = if acc_scores.len() > 1 { acc_scores[1].1 } else { 0.0 };
+                        let confidence = if best_score > 0.0 {
+                            ((best_score - second_score) / best_score).max(0.0).min(1.0)
+                        } else {
+                            0.0
+                        };
+                        let top_n = 3usize.min(acc_scores.len());
+                        let top_keys = acc_scores.iter().take(top_n).cloned().collect::<Vec<_>>();
+                        Ok(KeyDetectionResult {
+                            key: best_key,
+                            confidence,
+                            all_scores: acc_scores,
+                            top_keys,
+                        })
+                    }
+                } else if config.enable_key_mode_heuristic || config.enable_key_minor_harmonic_bonus {
+                    detect_key_weighted_mode_heuristic(
+                        chroma_slice,
+                        &templates,
+                        frame_weights.as_deref(),
+                        config.key_mode_third_ratio_margin,
+                        if config.enable_key_mode_heuristic {
+                            config.key_mode_flip_min_score_ratio
+                        } else {
+                            0.0
+                        },
+                        config.enable_key_minor_harmonic_bonus,
+                        config.key_minor_leading_tone_bonus_weight,
+                    )
+                } else {
+                    detect_key_weighted(chroma_slice, &templates, frame_weights.as_deref())
+                }
+            };
+
+                match key_call {
                     Ok(key_result) => {
                         // Compute key clarity
                         let clarity = compute_key_clarity(&key_result.all_scores);
                         
                         log::debug!("Detected key: {:?}, confidence: {:.3}, clarity: {:.3}",
                                    key_result.key, key_result.confidence, clarity);
+
+                        // Optional debug dump to stderr (captured by validation harness)
+                        if let Some(track_id) = config.debug_track_id {
+                            // Weighted pitch-class summary (for diagnosing collapses)
+                            let mut agg = vec![0.0f32; 12];
+                            let mut used = 0usize;
+                            for (idx, ch) in chroma_slice.iter().enumerate() {
+                                let w = frame_weights
+                                    .as_ref()
+                                    .and_then(|v| v.get(idx).copied())
+                                    .unwrap_or(1.0);
+                                if w <= 0.0 {
+                                    continue;
+                                }
+                                used += 1;
+                                for i in 0..12 {
+                                    agg[i] += w * ch[i];
+                                }
+                            }
+                            let sum_agg: f32 = agg.iter().sum();
+                            if sum_agg > 1e-12 {
+                                for x in agg.iter_mut() {
+                                    *x /= sum_agg;
+                                }
+                            }
+                            let mut pcs: Vec<(usize, f32)> = agg.iter().cloned().enumerate().collect();
+                            pcs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                            eprintln!("\n=== DEBUG key (track_id={}) ===", track_id);
+                            eprintln!(
+                                "key={} conf={:.4} clarity={:.4} frames={} used_frames={} soft_mapping={} sigma={:.3} harmonic_mask={} mask_p={:.2} tuning={:.4} time_smooth={} margin={} edge_trim={} trim_frac={:.2}",
+                                key_result.key.name(),
+                                key_result.confidence,
+                                clarity,
+                                chroma_slice.len(),
+                                used,
+                                config.soft_chroma_mapping,
+                                config.soft_mapping_sigma,
+                                config.enable_key_harmonic_mask,
+                                config.key_harmonic_mask_power,
+                                tuning_offset,
+                                config.enable_key_spectrogram_time_smoothing,
+                                config.key_spectrogram_smooth_margin,
+                                config.enable_key_edge_trim,
+                                config.key_edge_trim_fraction
+                            );
+                            eprintln!(
+                                "top_keys: {}",
+                                key_result
+                                    .top_keys
+                                    .iter()
+                                    .map(|(k, s)| format!("{}:{:.4}", k.name(), s))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                            let note_names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+                            eprintln!(
+                                "top_pitch_classes(weighted): {}",
+                                pcs.iter()
+                                    .take(6)
+                                    .map(|(i, v)| format!("{}:{:.3}", note_names[*i], v))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                        }
                         
                         (key_result.key, key_result.confidence, clarity)
                     }

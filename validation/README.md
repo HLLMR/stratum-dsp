@@ -1,6 +1,15 @@
-# FMA Small Validation
+# Validation
 
-This directory contains scripts for validating stratum-dsp against the Free Music Archive (FMA) Small dataset.
+This directory contains scripts for validating stratum-dsp against ground truth datasets.
+
+**Primary validation dataset**: Real-world DJ tracks (Beatport/ZipDJ) — 155 tracks with verified BPM/key ground truth.  
+**Results**: 
+- **BPM**: 87.7% ±2 BPM accuracy, 6.08 BPM MAE
+- **Key**: 72.1% exact match vs GT (n=68), matching MIK performance
+
+See `docs/progress-reports/PHASE_1F_VALIDATION.md` for BPM details and `docs/literature/stratum_2025_key_detection_real_world.md` for key detection improvements.
+
+**Secondary dataset**: Free Music Archive (FMA) Small — used for algorithm development and tuning.
 
 ## Setup
 
@@ -189,7 +198,7 @@ Contains validation results for each track:
 
 The validation compares results against these targets:
 - **BPM**: 88% accuracy (±2 BPM tolerance)
-- **Key**: 77% accuracy (exact match)
+- **Key**: 77% accuracy (exact match) — **Current: 72.1%** (matches MIK performance)
 
 ## Notes
 

@@ -279,18 +279,22 @@ The following modes exist to support validation and controlled experiments:
 
 ---
 
-## 5) Key detection (Phase 1D)
+## 5) Key detection (Phase 1D + 1F improvements)
 
 **Pipeline** (as wired today):
 
-1. Chroma extraction:
+1. Chroma extraction (key-only STFT override, HPSS harmonic mask):
    - `extract_chroma_with_options(...)` in `src/features/chroma/extractor.rs`
+   - Optional higher-resolution STFT (default: 8192 FFT) for key detection only
+   - Optional median-filter HPSS harmonic mask to suppress percussive transients
 2. Optional chroma sharpening:
    - `src/features/chroma/normalization.rs`
 3. Optional smoothing:
    - `src/features/chroma/smoothing.rs`
 4. Key detection + clarity:
-   - `src/features/key/*`
+   - `src/features/key/detector.rs`: Template matching with score normalization and circle-of-fifths weighting
+   - Optional mode heuristic (3rd scale degree discrimination) to reduce minor→major mistakes
+   - **Accuracy**: 72.1% vs GT (n=68) on real-world DJ tracks, matching MIK performance
 
 ### Decision points
 
