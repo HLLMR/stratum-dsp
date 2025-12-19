@@ -221,6 +221,7 @@ pub fn detect_spectral_flux_onsets(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 

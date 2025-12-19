@@ -215,11 +215,11 @@ pub fn detect_hfc_onsets(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 
     #[test]
-    #[allow(clippy::needless_range_loop)]
     fn test_hfc_basic() {
         // Create spectrogram with high-frequency content at frame 5
         let mut spectrogram = vec![vec![0.01f32; 1024]; 10];

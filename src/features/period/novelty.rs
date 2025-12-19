@@ -986,6 +986,7 @@ fn smooth_moving_average_in_place(x: &mut [f32], window: usize) {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 
