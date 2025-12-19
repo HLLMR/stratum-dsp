@@ -1,13 +1,25 @@
-//! Krumhansl-Kessler key templates
+//! Key templates for template-matching key detection
 //!
-//! Defines tonal profiles for 24 keys (12 major + 12 minor) based on empirical
-//! listening experiments.
+//! Supports multiple template sets:
+//! - Krumhansl-Kessler (1982): Empirical profiles from listening experiments
+//! - Temperley (1999): Statistical profiles derived from musical corpus analysis
 //!
-//! # Reference
+//! # References
 //!
-//! Krumhansl, C. L., & Kessler, E. J. (1982). Tracing the Dynamic Changes in Perceived
-//! Tonal Organization in a Spatial Representation of Musical Keys. *Psychological Review*,
-//! 89(4), 334-368.
+//! - Krumhansl, C. L., & Kessler, E. J. (1982). Tracing the Dynamic Changes in Perceived
+//!   Tonal Organization in a Spatial Representation of Musical Keys. *Psychological Review*,
+//!   89(4), 334-368.
+//! - Temperley, D. (1999). What's key for key? The Krumhansl-Schmuckler key-finding algorithm
+//!   reconsidered. *Music Perception*, 17(1), 65-100.
+
+/// Template set type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateSet {
+    /// Krumhansl-Kessler (1982) templates
+    KrumhanslKessler,
+    /// Temperley (1999) templates
+    Temperley,
+}
 
 /// Key templates for all 24 keys
 #[derive(Debug, Clone)]
@@ -29,6 +41,27 @@ impl KeyTemplates {
     ///
     /// `KeyTemplates` with all 24 key profiles initialized
     pub fn new() -> Self {
+        Self::new_with_template_set(TemplateSet::KrumhanslKessler)
+    }
+
+    /// Create new key templates with specified template set
+    ///
+    /// # Arguments
+    ///
+    /// * `template_set` - Which template set to use (K-K or Temperley)
+    ///
+    /// # Returns
+    ///
+    /// `KeyTemplates` with all 24 key profiles initialized
+    pub fn new_with_template_set(template_set: TemplateSet) -> Self {
+        match template_set {
+            TemplateSet::KrumhanslKessler => Self::new_krumhansl_kessler(),
+            TemplateSet::Temperley => Self::new_temperley(),
+        }
+    }
+
+    /// Create Krumhansl-Kessler templates
+    fn new_krumhansl_kessler() -> Self {
         // Canonical Krumhansl-Kessler tonal profiles (1982), in [C, C#, D, ..., B] order.
         // Source values are commonly published in this form:
         //   - Major: C major profile
@@ -91,6 +124,89 @@ impl KeyTemplates {
         }
 
         // L2-normalize each template so dot-products behave like cosine similarity against L2-normalized chroma.
+        fn l2_normalize(v: &mut [f32]) {
+            let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
+            if norm > 1e-12 {
+                for x in v.iter_mut() {
+                    *x /= norm;
+                }
+            }
+        }
+
+        for k in 0..12 {
+            l2_normalize(&mut major[k]);
+            l2_normalize(&mut minor[k]);
+        }
+        
+        Self { major, minor }
+    }
+
+    /// Create Temperley templates
+    ///
+    /// Temperley (1999) profiles are derived from statistical analysis of musical corpora.
+    /// They tend to have different mode discrimination characteristics than K-K templates.
+    fn new_temperley() -> Self {
+        // Temperley (1999) tonal profiles, in [C, C#, D, ..., B] order.
+        // Source: Temperley, D. (1999). What's key for key? The Krumhansl-Schmuckler
+        // key-finding algorithm reconsidered. Music Perception, 17(1), 65-100.
+        //
+        // These values are commonly cited in MIR literature. They are derived from
+        // corpus analysis rather than listening experiments.
+        let c_major = vec![
+            5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0,
+        ];
+
+        let c_minor = vec![
+            5.0, 2.0, 3.5, 5.0, 2.0, 3.5, 2.0, 4.5, 3.5, 2.0, 4.0, 3.5,
+        ];
+        
+        // Generate all 12 major keys by rotating C major
+        let mut major: [Vec<f32>; 12] = [
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+        ];
+        
+        // Generate all 12 minor keys by rotating C minor
+        let mut minor: [Vec<f32>; 12] = [
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+            vec![0.0; 12],
+        ];
+        
+        // Rotate templates for all 12 keys
+        for key_idx in 0..12 {
+            // Major keys: rotate C major template
+            for semitone_idx in 0..12 {
+                major[key_idx][semitone_idx] = c_major[(semitone_idx + 12 - key_idx) % 12];
+            }
+            
+            // Minor keys: rotate C minor template
+            for semitone_idx in 0..12 {
+                let source_idx = (semitone_idx + 12 - key_idx) % 12;
+                minor[key_idx][semitone_idx] = c_minor[source_idx];
+            }
+        }
+
+        // L2-normalize each template
         fn l2_normalize(v: &mut [f32]) {
             let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
             if norm > 1e-12 {

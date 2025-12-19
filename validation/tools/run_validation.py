@@ -164,6 +164,160 @@ def main():
     parser.add_argument("--novelty-w-hfc", type=float, default=None)
     parser.add_argument("--novelty-local-mean-window", type=int, default=None)
     parser.add_argument("--novelty-smooth-window", type=int, default=None)
+
+    # Key HPSS tuning (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-hpss",
+        action="store_true",
+        help="Enable median-filter HPSS harmonic mask for key detection (key-only).",
+    )
+    parser.add_argument(
+        "--no-key-hpss",
+        action="store_true",
+        help="Disable key HPSS harmonic mask for key detection (key-only).",
+    )
+    parser.add_argument("--key-hpss-frame-step", type=int, default=None)
+    parser.add_argument("--key-hpss-time-margin", type=int, default=None)
+    parser.add_argument("--key-hpss-freq-margin", type=int, default=None)
+    parser.add_argument("--key-hpss-mask-power", type=float, default=None)
+
+    # Key mode heuristic + minor harmonic bonus (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-mode-heuristic",
+        action="store_true",
+        help="Enable conservative key mode heuristic (parallel major/minor flip gate).",
+    )
+    parser.add_argument("--key-mode-third-margin", type=float, default=None)
+    parser.add_argument("--key-mode-flip-min-score-ratio", type=float, default=None)
+    parser.add_argument(
+        "--key-minor-harmonic-bonus",
+        action="store_true",
+        help="Enable minor harmonic (leading-tone) bonus when scoring templates.",
+    )
+    parser.add_argument("--key-minor-leading-tone-bonus-weight", type=float, default=None)
+
+    # Key segment voting (pass-through to analyze_file)
+    parser.add_argument(
+        "--no-key-segment-voting",
+        action="store_true",
+        help="Disable key segment voting (windowed key detection + score accumulation).",
+    )
+    parser.add_argument("--key-segment-len-frames", type=int, default=None)
+    parser.add_argument("--key-segment-hop-frames", type=int, default=None)
+    parser.add_argument("--key-segment-min-clarity", type=float, default=None)
+
+    # Key HPCP (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-hpcp",
+        action="store_true",
+        help="Enable HPCP-style pitch-class profile extraction for key detection.",
+    )
+    parser.add_argument("--key-hpcp-peaks", type=int, default=None)
+    parser.add_argument("--key-hpcp-harmonics", type=int, default=None)
+    parser.add_argument("--key-hpcp-harmonic-decay", type=float, default=None)
+    parser.add_argument("--key-hpcp-mag-power", type=float, default=None)
+    parser.add_argument(
+        "--key-hpcp-whitening",
+        action="store_true",
+        help="Enable spectral whitening for HPCP peak picking (timbre suppression).",
+    )
+    parser.add_argument("--key-hpcp-whitening-smooth-bins", type=int, default=None)
+
+    # Key-only STFT override (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-stft-override",
+        action="store_true",
+        help="Compute a separate STFT for key detection (can increase frequency resolution for key).",
+    )
+    parser.add_argument(
+        "--no-key-stft-override",
+        action="store_true",
+        help="Disable key-only STFT override (force shared STFT for key detection).",
+    )
+    parser.add_argument("--key-stft-frame-size", type=int, default=None)
+    parser.add_argument("--key-stft-hop-size", type=int, default=None)
+
+    # Key log-frequency spectrogram (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-log-freq",
+        action="store_true",
+        help="Enable log-frequency (semitone-aligned) spectrogram for key detection.",
+    )
+    parser.add_argument(
+        "--no-key-log-freq",
+        action="store_true",
+        help="Disable log-frequency spectrogram (use linear STFT with frequency-to-semitone mapping).",
+    )
+
+    # Key beat-synchronous chroma (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-beat-sync",
+        action="store_true",
+        help="Enable beat-synchronous chroma extraction (align chroma windows to beat boundaries).",
+    )
+    parser.add_argument(
+        "--no-key-beat-sync",
+        action="store_true",
+        help="Disable beat-synchronous chroma (use frame-based chroma extraction).",
+    )
+
+    # Key multi-scale detection (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-multi-scale",
+        action="store_true",
+        help="Enable multi-scale key detection (ensemble voting across multiple time scales).",
+    )
+    parser.add_argument(
+        "--no-key-multi-scale",
+        action="store_true",
+        help="Disable multi-scale key detection (use single-scale detection).",
+    )
+    parser.add_argument("--key-multi-scale-lengths", type=str, default=None)
+    parser.add_argument("--key-multi-scale-hop", type=int, default=None)
+    parser.add_argument("--key-multi-scale-min-clarity", type=float, default=None)
+    parser.add_argument("--key-multi-scale-weights", type=str, default=None)
+
+    # Key template set selection (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-template-temperley",
+        action="store_true",
+        help="Use Temperley (1999) templates instead of Krumhansl-Kessler (1982).",
+    )
+    parser.add_argument(
+        "--key-template-kk",
+        action="store_true",
+        help="Use Krumhansl-Kessler (1982) templates (default).",
+    )
+
+    # Key ensemble detection (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-ensemble",
+        action="store_true",
+        help="Enable ensemble key detection (combine K-K and Temperley template scores).",
+    )
+    parser.add_argument(
+        "--no-key-ensemble",
+        action="store_true",
+        help="Disable ensemble key detection (use single template set).",
+    )
+    parser.add_argument("--key-ensemble-kk-weight", type=float, default=None)
+    parser.add_argument("--key-ensemble-temperley-weight", type=float, default=None)
+
+    # Key median detection (pass-through to analyze_file)
+    parser.add_argument(
+        "--key-median",
+        action="store_true",
+        help="Enable median key detection (detect from multiple short segments, select median).",
+    )
+    parser.add_argument(
+        "--no-key-median",
+        action="store_true",
+        help="Disable median key detection (use global key detection).",
+    )
+    parser.add_argument("--key-median-segment-length-frames", type=int, default=None)
+    parser.add_argument("--key-median-segment-hop-frames", type=int, default=None)
+    parser.add_argument("--key-median-min-segments", type=int, default=None)
+
     parser.add_argument(
         "--max-tracks",
         type=int,
@@ -308,6 +462,110 @@ def main():
         extra_args.append("--band-score-fusion")
     if args.no_tempogram_mel_novelty:
         extra_args.append("--no-tempogram-mel-novelty")
+
+    # Pass-through key HPSS flags (if provided)
+    if args.no_key_hpss:
+        extra_args.append("--no-key-hpss")
+    if args.key_hpss:
+        extra_args.append("--key-hpss")
+    if args.key_hpss_frame_step is not None:
+        extra_args += ["--key-hpss-frame-step", str(int(args.key_hpss_frame_step))]
+    if args.key_hpss_time_margin is not None:
+        extra_args += ["--key-hpss-time-margin", str(int(args.key_hpss_time_margin))]
+    if args.key_hpss_freq_margin is not None:
+        extra_args += ["--key-hpss-freq-margin", str(int(args.key_hpss_freq_margin))]
+    if args.key_hpss_mask_power is not None:
+        extra_args += ["--key-hpss-mask-power", str(float(args.key_hpss_mask_power))]
+
+    # Pass-through key heuristic flags (if provided)
+    if args.key_mode_heuristic:
+        extra_args.append("--key-mode-heuristic")
+    if args.key_mode_third_margin is not None:
+        extra_args += ["--key-mode-third-margin", str(float(args.key_mode_third_margin))]
+    if args.key_mode_flip_min_score_ratio is not None:
+        extra_args += ["--key-mode-flip-min-score-ratio", str(float(args.key_mode_flip_min_score_ratio))]
+    if args.key_minor_harmonic_bonus:
+        extra_args.append("--key-minor-harmonic-bonus")
+    if args.key_minor_leading_tone_bonus_weight is not None:
+        extra_args += ["--key-minor-leading-tone-bonus-weight", str(float(args.key_minor_leading_tone_bonus_weight))]
+
+    # Pass-through key segment voting flags (if provided)
+    if args.no_key_segment_voting:
+        extra_args.append("--no-key-segment-voting")
+    if args.key_segment_len_frames is not None:
+        extra_args += ["--key-segment-len-frames", str(int(args.key_segment_len_frames))]
+    if args.key_segment_hop_frames is not None:
+        extra_args += ["--key-segment-hop-frames", str(int(args.key_segment_hop_frames))]
+    if args.key_segment_min_clarity is not None:
+        extra_args += ["--key-segment-min-clarity", str(float(args.key_segment_min_clarity))]
+
+    # Pass-through key HPCP flags (if provided)
+    if args.key_hpcp:
+        extra_args.append("--key-hpcp")
+    if args.key_hpcp_peaks is not None:
+        extra_args += ["--key-hpcp-peaks", str(int(args.key_hpcp_peaks))]
+    if args.key_hpcp_harmonics is not None:
+        extra_args += ["--key-hpcp-harmonics", str(int(args.key_hpcp_harmonics))]
+    if args.key_hpcp_harmonic_decay is not None:
+        extra_args += ["--key-hpcp-harmonic-decay", str(float(args.key_hpcp_harmonic_decay))]
+    if args.key_hpcp_mag_power is not None:
+        extra_args += ["--key-hpcp-mag-power", str(float(args.key_hpcp_mag_power))]
+    if args.key_hpcp_whitening:
+        extra_args.append("--key-hpcp-whitening")
+    if args.key_hpcp_whitening_smooth_bins is not None:
+        extra_args += ["--key-hpcp-whitening-smooth-bins", str(int(args.key_hpcp_whitening_smooth_bins))]
+
+    # Pass-through key STFT override flags (if provided)
+    if args.no_key_stft_override:
+        extra_args.append("--no-key-stft-override")
+    if args.key_stft_override:
+        extra_args.append("--key-stft-override")
+    if args.key_stft_frame_size is not None:
+        extra_args += ["--key-stft-frame-size", str(int(args.key_stft_frame_size))]
+    if args.key_stft_hop_size is not None:
+        extra_args += ["--key-stft-hop-size", str(int(args.key_stft_hop_size))]
+
+    # Pass-through key log-frequency flags (if provided)
+    if args.key_log_freq:
+        extra_args.append("--key-log-freq")
+    if args.no_key_log_freq:
+        extra_args.append("--no-key-log-freq")
+
+    # Pass-through key beat-synchronous flags (if provided)
+    if args.key_beat_sync:
+        extra_args.append("--key-beat-sync")
+    if args.no_key_beat_sync:
+        extra_args.append("--no-key-beat-sync")
+
+    # Pass-through key multi-scale flags (if provided)
+    if args.key_multi_scale:
+        extra_args.append("--key-multi-scale")
+    if args.no_key_multi_scale:
+        extra_args.append("--no-key-multi-scale")
+    if args.key_multi_scale_lengths is not None:
+        extra_args += ["--key-multi-scale-lengths", args.key_multi_scale_lengths]
+    if args.key_multi_scale_hop is not None:
+        extra_args += ["--key-multi-scale-hop", str(int(args.key_multi_scale_hop))]
+    if args.key_multi_scale_min_clarity is not None:
+        extra_args += ["--key-multi-scale-min-clarity", str(float(args.key_multi_scale_min_clarity))]
+    if args.key_multi_scale_weights is not None:
+        extra_args += ["--key-multi-scale-weights", args.key_multi_scale_weights]
+
+    # Pass-through key template set flags (if provided)
+    if args.key_template_temperley:
+        extra_args.append("--key-template-temperley")
+    if args.key_template_kk:
+        extra_args.append("--key-template-kk")
+
+    # Pass-through key ensemble flags (if provided)
+    if args.key_ensemble:
+        extra_args.append("--key-ensemble")
+    if args.no_key_ensemble:
+        extra_args.append("--no-key-ensemble")
+    if args.key_ensemble_kk_weight is not None:
+        extra_args += ["--key-ensemble-kk-weight", str(float(args.key_ensemble_kk_weight))]
+    if args.key_ensemble_temperley_weight is not None:
+        extra_args += ["--key-ensemble-temperley-weight", str(float(args.key_ensemble_temperley_weight))]
 
     # Pass-through multi-resolution tuning flags (if provided)
     if args.multi_res_top_k is not None:

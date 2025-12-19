@@ -176,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--debug-track-id ID] [--debug-gt-bpm X] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--no-tempogram-percussive] [--no-tempogram-band-fusion] [--band-score-fusion] [--no-tempogram-mel-novelty] [--mel-n-mels N] [--mel-fmin-hz X] [--mel-fmax-hz X] [--mel-max-filter-bins N] [--mel-weight X] [--novelty-w-spectral X] [--novelty-w-energy X] [--novelty-w-hfc X] [--novelty-local-mean-window N] [--novelty-smooth-window N] [--band-low-max-hz X] [--band-mid-max-hz X] [--band-high-max-hz X] [--band-w-full X] [--band-w-low X] [--band-w-mid X] [--band-w-high X] [--band-support-threshold X] [--band-consensus-bonus X] [--superflux-max-filter-bins N] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X]", args[0]);
+        eprintln!("Usage: {} <audio_file> [--json] [--debug] [--debug-track-id ID] [--debug-gt-bpm X] [--no-preprocess] [--no-normalize] [--no-trim] [--no-onset-consensus] [--force-legacy-bpm] [--bpm-fusion] [--no-tempogram-multi-res] [--no-tempogram-percussive] [--no-tempogram-band-fusion] [--band-score-fusion] [--no-tempogram-mel-novelty] [--mel-n-mels N] [--mel-fmin-hz X] [--mel-fmax-hz X] [--mel-max-filter-bins N] [--mel-weight X] [--novelty-w-spectral X] [--novelty-w-energy X] [--novelty-w-hfc X] [--novelty-local-mean-window N] [--novelty-smooth-window N] [--band-low-max-hz X] [--band-mid-max-hz X] [--band-high-max-hz X] [--band-w-full X] [--band-w-low X] [--band-w-mid X] [--band-w-high X] [--band-support-threshold X] [--band-consensus-bonus X] [--superflux-max-filter-bins N] [--multi-res-top-k N] [--multi-res-w512 X] [--multi-res-w256 X] [--multi-res-w1024 X] [--multi-res-structural-discount X] [--multi-res-double-time-512-factor X] [--multi-res-margin-threshold X] [--multi-res-human-prior] [--bpm-candidates] [--bpm-candidates-top N] [--legacy-preferred-min X] [--legacy-preferred-max X] [--legacy-soft-min X] [--legacy-soft-max X] [--legacy-mul-preferred X] [--legacy-mul-soft X] [--legacy-mul-extreme X] [--no-key-harmonic-mask] [--key-harmonic-mask-power X] [--key-hpss] [--no-key-hpss] [--key-hpss-frame-step N] [--key-hpss-time-margin N] [--key-hpss-freq-margin N] [--key-hpss-mask-power X] [--no-key-tuning] [--key-tuning-max-semitones X] [--key-tuning-frame-step N] [--key-tuning-peak-rel-threshold X] [--no-key-edge-trim] [--key-edge-trim-fraction X] [--no-key-segment-voting] [--key-segment-len-frames N] [--key-segment-hop-frames N] [--key-segment-min-clarity X] [--key-mode-heuristic] [--no-key-mode-heuristic] [--key-mode-third-margin X] [--key-mode-flip-min-score-ratio X] [--key-minor-harmonic-bonus] [--no-key-minor-harmonic-bonus] [--key-minor-leading-tone-bonus-weight X] [--key-hpcp] [--key-hpcp-peaks N] [--key-hpcp-harmonics N] [--key-hpcp-harmonic-decay X] [--key-hpcp-mag-power X] [--no-key-hpcp-bass] [--key-hpcp-bass-fmin-hz X] [--key-hpcp-bass-fmax-hz X] [--key-hpcp-bass-weight X] [--no-key-spec-smooth] [--key-spec-smooth-margin N] [--no-key-frame-weighting] [--key-min-tonalness X] [--key-tonalness-power X] [--key-energy-power X]", args[0]);
         std::process::exit(1);
     }
     
@@ -196,6 +196,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let no_tempogram_band_fusion = args.contains(&"--no-tempogram-band-fusion".to_string());
     let band_score_fusion = args.contains(&"--band-score-fusion".to_string());
     let no_tempogram_mel_novelty = args.contains(&"--no-tempogram-mel-novelty".to_string());
+    let no_key_spec_smooth = args.contains(&"--no-key-spec-smooth".to_string());
+    let no_key_frame_weighting = args.contains(&"--no-key-frame-weighting".to_string());
+    let no_key_harmonic_mask = args.contains(&"--no-key-harmonic-mask".to_string());
+    let key_hpss = args.contains(&"--key-hpss".to_string());
+    let no_key_hpss = args.contains(&"--no-key-hpss".to_string());
+    let no_key_stft_override = args.contains(&"--no-key-stft-override".to_string());
+    let no_key_tuning = args.contains(&"--no-key-tuning".to_string());
+    let no_key_edge_trim = args.contains(&"--no-key-edge-trim".to_string());
+    let no_key_segment_voting = args.contains(&"--no-key-segment-voting".to_string());
+    let key_mode_heuristic = args.contains(&"--key-mode-heuristic".to_string());
+    let no_key_mode_heuristic = args.contains(&"--no-key-mode-heuristic".to_string());
+    let key_hpcp = args.contains(&"--key-hpcp".to_string());
+    let key_minor_harmonic_bonus = args.contains(&"--key-minor-harmonic-bonus".to_string());
 
     fn arg_value(args: &[String], name: &str) -> Option<String> {
         args.iter()
@@ -210,6 +223,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fn parse_usize(args: &[String], name: &str) -> Option<usize> {
         arg_value(args, name).and_then(|v| v.parse::<usize>().ok())
+    }
+    fn parse_string(args: &[String], name: &str) -> Option<String> {
+        arg_value(args, name).map(|v| v.clone())
     }
 
     let debug_track_id = arg_value(&args, "--debug-track-id").and_then(|v| v.parse::<u32>().ok());
@@ -258,6 +274,279 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(n) = parse_usize(&args, "--bpm-candidates-top") {
         config.emit_tempogram_candidates = true;
         config.tempogram_candidates_top_n = n;
+    }
+
+    // Key tuning flags (Phase 1F+ key fixes)
+    if no_key_harmonic_mask {
+        config.enable_key_harmonic_mask = false;
+    }
+    if let Some(x) = parse_f32(&args, "--key-harmonic-mask-power") {
+        config.key_harmonic_mask_power = x;
+    }
+
+    // Key HPSS (median-filter harmonic mask)
+    if key_hpss {
+        config.enable_key_hpss_harmonic = true;
+    }
+    if no_key_hpss {
+        config.enable_key_hpss_harmonic = false;
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpss-frame-step") {
+        config.enable_key_hpss_harmonic = true;
+        config.key_hpss_frame_step = n.max(1);
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpss-time-margin") {
+        config.enable_key_hpss_harmonic = true;
+        config.key_hpss_time_margin = n;
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpss-freq-margin") {
+        config.enable_key_hpss_harmonic = true;
+        config.key_hpss_freq_margin = n;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpss-mask-power") {
+        config.enable_key_hpss_harmonic = true;
+        config.key_hpss_mask_power = x;
+    }
+
+    // Key-only STFT override (higher frequency resolution for key detection).
+    // Any explicit override parameter implicitly enables the override.
+    if no_key_stft_override {
+        config.enable_key_stft_override = false;
+    }
+    if args.contains(&"--key-stft-override".to_string()) {
+        config.enable_key_stft_override = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-stft-frame-size") {
+        config.enable_key_stft_override = true;
+        config.key_stft_frame_size = n.max(256);
+    }
+    if let Some(n) = parse_usize(&args, "--key-stft-hop-size") {
+        config.enable_key_stft_override = true;
+        config.key_stft_hop_size = n.max(1);
+    }
+
+    // Key log-frequency spectrogram (semitone-aligned bins)
+    let key_log_freq = args.contains(&"--key-log-freq".to_string());
+    let no_key_log_freq = args.contains(&"--no-key-log-freq".to_string());
+    if no_key_log_freq {
+        config.enable_key_log_frequency = false;
+    }
+    if key_log_freq {
+        config.enable_key_log_frequency = true;
+    }
+
+    // Key beat-synchronous chroma (align chroma windows to beat boundaries)
+    let key_beat_sync = args.contains(&"--key-beat-sync".to_string());
+    let no_key_beat_sync = args.contains(&"--no-key-beat-sync".to_string());
+    if no_key_beat_sync {
+        config.enable_key_beat_synchronous = false;
+    }
+    if key_beat_sync {
+        config.enable_key_beat_synchronous = true;
+    }
+
+    // Key multi-scale detection (ensemble voting across multiple time scales)
+    let key_multi_scale = args.contains(&"--key-multi-scale".to_string());
+    let no_key_multi_scale = args.contains(&"--no-key-multi-scale".to_string());
+    if no_key_multi_scale {
+        config.enable_key_multi_scale = false;
+    }
+    if key_multi_scale {
+        config.enable_key_multi_scale = true;
+    }
+    // Parse multi-scale lengths (comma-separated frame counts)
+    if let Some(s) = parse_string(&args, "--key-multi-scale-lengths") {
+        let lengths: Result<Vec<usize>, _> = s.split(',').map(|x| x.trim().parse()).collect();
+        if let Ok(lens) = lengths {
+            config.key_multi_scale_lengths = lens;
+            config.enable_key_multi_scale = true;
+        }
+    }
+    if let Some(n) = parse_usize(&args, "--key-multi-scale-hop") {
+        config.key_multi_scale_hop = n.max(1);
+        config.enable_key_multi_scale = true;
+    }
+    if let Some(x) = parse_f32(&args, "--key-multi-scale-min-clarity") {
+        config.key_multi_scale_min_clarity = x.clamp(0.0, 1.0);
+        config.enable_key_multi_scale = true;
+    }
+    // Parse multi-scale weights (comma-separated floats)
+    if let Some(s) = parse_string(&args, "--key-multi-scale-weights") {
+        let weights: Result<Vec<f32>, _> = s.split(',').map(|x| x.trim().parse()).collect();
+        if let Ok(wts) = weights {
+            config.key_multi_scale_weights = wts;
+            config.enable_key_multi_scale = true;
+        }
+    }
+
+    // Key template set selection
+    if args.contains(&"--key-template-temperley".to_string()) {
+        config.key_template_set = stratum_dsp::features::key::templates::TemplateSet::Temperley;
+    }
+    if args.contains(&"--key-template-kk".to_string()) {
+        config.key_template_set = stratum_dsp::features::key::templates::TemplateSet::KrumhanslKessler;
+    }
+
+    // Key ensemble detection (combine K-K and Temperley templates)
+    let key_ensemble = args.contains(&"--key-ensemble".to_string());
+    let no_key_ensemble = args.contains(&"--no-key-ensemble".to_string());
+    if no_key_ensemble {
+        config.enable_key_ensemble = false;
+    }
+    if key_ensemble {
+        config.enable_key_ensemble = true;
+    }
+    if let Some(x) = parse_f32(&args, "--key-ensemble-kk-weight") {
+        config.key_ensemble_kk_weight = x.max(0.0);
+        config.enable_key_ensemble = true;
+    }
+    if let Some(x) = parse_f32(&args, "--key-ensemble-temperley-weight") {
+        config.key_ensemble_temperley_weight = x.max(0.0);
+        config.enable_key_ensemble = true;
+    }
+
+    // Key median detection (detect from multiple short segments, select median)
+    let key_median = args.contains(&"--key-median".to_string());
+    let no_key_median = args.contains(&"--no-key-median".to_string());
+    if no_key_median {
+        config.enable_key_median = false;
+    }
+    if key_median {
+        config.enable_key_median = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-median-segment-length-frames") {
+        config.key_median_segment_length_frames = n.max(120);
+        config.enable_key_median = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-median-segment-hop-frames") {
+        config.key_median_segment_hop_frames = n.max(1);
+        config.enable_key_median = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-median-min-segments") {
+        config.key_median_min_segments = n.max(1);
+        config.enable_key_median = true;
+    }
+
+    if no_key_tuning {
+        config.enable_key_tuning_compensation = false;
+    }
+    if let Some(x) = parse_f32(&args, "--key-tuning-max-semitones") {
+        config.key_tuning_max_abs_semitones = x;
+    }
+    if let Some(n) = parse_usize(&args, "--key-tuning-frame-step") {
+        config.key_tuning_frame_step = n;
+    }
+    if let Some(x) = parse_f32(&args, "--key-tuning-peak-rel-threshold") {
+        config.key_tuning_peak_rel_threshold = x;
+    }
+    if no_key_edge_trim {
+        config.enable_key_edge_trim = false;
+    }
+    if let Some(x) = parse_f32(&args, "--key-edge-trim-fraction") {
+        config.key_edge_trim_fraction = x;
+    }
+    if no_key_segment_voting {
+        config.enable_key_segment_voting = false;
+    }
+    if let Some(n) = parse_usize(&args, "--key-segment-len-frames") {
+        config.key_segment_len_frames = n;
+    }
+    if let Some(n) = parse_usize(&args, "--key-segment-hop-frames") {
+        config.key_segment_hop_frames = n;
+    }
+    if let Some(x) = parse_f32(&args, "--key-segment-min-clarity") {
+        config.key_segment_min_clarity = x;
+    }
+    if no_key_mode_heuristic {
+        config.enable_key_mode_heuristic = false;
+    }
+    if key_mode_heuristic {
+        config.enable_key_mode_heuristic = true;
+    }
+    if let Some(x) = parse_f32(&args, "--key-mode-third-margin") {
+        config.enable_key_mode_heuristic = true;
+        config.key_mode_third_ratio_margin = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-mode-flip-min-score-ratio") {
+        config.enable_key_mode_heuristic = true;
+        config.key_mode_flip_min_score_ratio = x;
+    }
+
+    // HPCP-style key chroma flags (experimental)
+    if key_hpcp {
+        config.enable_key_hpcp = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpcp-peaks") {
+        config.enable_key_hpcp = true;
+        config.key_hpcp_peaks_per_frame = n;
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpcp-harmonics") {
+        config.enable_key_hpcp = true;
+        config.key_hpcp_num_harmonics = n;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpcp-harmonic-decay") {
+        config.enable_key_hpcp = true;
+        config.key_hpcp_harmonic_decay = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpcp-mag-power") {
+        config.enable_key_hpcp = true;
+        config.key_hpcp_mag_power = x;
+    }
+    if args.contains(&"--key-hpcp-whitening".to_string()) {
+        config.enable_key_hpcp = true;
+        config.enable_key_hpcp_whitening = true;
+    }
+    if let Some(n) = parse_usize(&args, "--key-hpcp-whitening-smooth-bins") {
+        config.enable_key_hpcp = true;
+        config.enable_key_hpcp_whitening = true;
+        config.key_hpcp_whitening_smooth_bins = n.max(3);
+    }
+
+    // Minor harmonic bonus flags
+    if args.contains(&"--no-key-minor-harmonic-bonus".to_string()) {
+        config.enable_key_minor_harmonic_bonus = false;
+    }
+    if key_minor_harmonic_bonus {
+        config.enable_key_minor_harmonic_bonus = true;
+    }
+    if let Some(x) = parse_f32(&args, "--key-minor-leading-tone-bonus-weight") {
+        config.enable_key_minor_harmonic_bonus = true;
+        config.key_minor_leading_tone_bonus_weight = x;
+    }
+
+    // HPCP bass blend flags
+    if args.contains(&"--no-key-hpcp-bass".to_string()) {
+        config.enable_key_hpcp_bass_blend = false;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpcp-bass-fmin-hz") {
+        config.enable_key_hpcp_bass_blend = true;
+        config.key_hpcp_bass_fmin_hz = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpcp-bass-fmax-hz") {
+        config.enable_key_hpcp_bass_blend = true;
+        config.key_hpcp_bass_fmax_hz = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-hpcp-bass-weight") {
+        config.enable_key_hpcp_bass_blend = true;
+        config.key_hpcp_bass_weight = x;
+    }
+    if no_key_spec_smooth {
+        config.enable_key_spectrogram_time_smoothing = false;
+    }
+    if let Some(n) = parse_usize(&args, "--key-spec-smooth-margin") {
+        config.key_spectrogram_smooth_margin = n;
+    }
+    if no_key_frame_weighting {
+        config.enable_key_frame_weighting = false;
+    }
+    if let Some(x) = parse_f32(&args, "--key-min-tonalness") {
+        config.key_min_tonalness = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-tonalness-power") {
+        config.key_tonalness_power = x;
+    }
+    if let Some(x) = parse_f32(&args, "--key-energy-power") {
+        config.key_energy_power = x;
     }
 
     // Multi-resolution tempogram tuning (Phase 1F)
