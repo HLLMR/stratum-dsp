@@ -1,5 +1,7 @@
 # Stratum DSP
 
+[![Crates.io](https://img.shields.io/crates/v/stratum-dsp.svg)](https://crates.io/crates/stratum-dsp)
+[![Docs.rs](https://docs.rs/stratum-dsp/badge.svg)](https://docs.rs/stratum-dsp)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -21,7 +23,16 @@
 
 ## Installation
 
-### From Git (Current)
+### From crates.io
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+stratum-dsp = "1.0"
+```
+
+### From Git (Development)
 
 Add to your `Cargo.toml`:
 
@@ -30,14 +41,7 @@ Add to your `Cargo.toml`:
 stratum-dsp = { git = "https://github.com/HLLMR/stratum-dsp" }
 ```
 
-### From crates.io (Coming Soon)
-
-```toml
-[dependencies]
-stratum-dsp = "0.1.0"
-```
-
-**Note**: This crate is currently in active development. The API is stable for core features (BPM/key/beat-grid), but advanced tuning parameters may change.
+**Note**: The API is stable for core features (BPM/key/beat-grid). Advanced tuning parameters may change in future versions.
 
 ## Quick Start
 
@@ -55,8 +59,7 @@ let result = analyze_audio(&samples, sample_rate, AnalysisConfig::default())?;
 let conf = compute_confidence(&result);
 
 println!("BPM: {:.2} (confidence: {:.2})", result.bpm, conf.bpm_confidence);
-println!("Key: {} (confidence: {:.2})", result.key.name(), conf.key_confidence);
-println!("Key (numerical): {}", result.key.numerical()); // e.g., "7A", "1B"
+println!("Key: {} ({})", result.key.name(), result.key.numerical()); // e.g., "C major (1A)", "Am (1B)"
 println!("Beat grid stability: {:.2}", result.grid_stability);
 # Ok::<(), stratum_dsp::AnalysisError>(())
 ```
@@ -87,12 +90,17 @@ Stratum DSP has been validated on real-world DJ tracks from Beatport and ZipDJ (
 | **BPM accuracy (±5 BPM)** | 88.4% (137/155 tracks) |
 | **BPM accuracy (±10 BPM)** | 89.0% (138/155 tracks) |
 | **BPM MAE** | 6.08 BPM |
-| **Key accuracy** | 17.6% vs GT (68 tracks) — *improvements in progress* |
+| **Key accuracy** | **72.1%** exact match vs GT (68 tracks) — *matches MIK performance* |
 
 **Dataset**: 155 verified DJ tracks (Beatport/ZipDJ) with ground truth BPM/key from vendor tags (pre-MIK snapshot).  
 **Reference baseline**: Mixed-in-Key (TAG) achieves 98.1% ±2 BPM and 72.1% key accuracy on the same dataset.
 
-For detailed validation reports, see `docs/progress-reports/PHASE_1F_VALIDATION.md`.
+**Note**: FMA Small dataset results (used for algorithm development) show lower accuracy (56.7% ±2 BPM) due to dataset diversity. Real-world DJ tracks achieve production-grade accuracy as shown above.
+
+For detailed validation reports, see:
+- `docs/progress-reports/PHASE_1F_VALIDATION.md` (FMA Small development results + real-world DJ results)
+- `docs/literature/stratum_2025_key_detection_real_world.md` (key detection improvements)
+- `validation/README.md` (validation workflow)
 
 ## Performance
 
@@ -121,8 +129,8 @@ For detailed benchmark reports, see `docs/progress-reports/PHASE_1F_BENCHMARKS.m
 
 ### Key Detection
 
-- **Current accuracy**: 17.6% vs ground truth (improvements in progress)
-- **Known issue**: Chroma extraction can collapse to a single key (`Dm` dominates) on some track types
+- **Current accuracy**: 72.1% exact match vs ground truth (matches Mixed In Key performance)
+- **Known issue**: Some tracks with weak tonality or heavy percussion may have lower confidence
 - **Workaround**: Key confidence scores indicate reliability; low confidence (<0.3) suggests the result may be unreliable
 
 ### General
