@@ -58,12 +58,7 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
     let mut all_samples = Vec::new();
 
     // Decode all samples
-    loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(_) => break,
-        };
-
+    while let Ok(packet) = format.next_packet() {
         if packet.track_id() != track_id {
             continue;
         }
@@ -237,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         arg_value(args, name).and_then(|v| v.parse::<usize>().ok())
     }
     fn parse_string(args: &[String], name: &str) -> Option<String> {
-        arg_value(args, name).map(|v| v.clone())
+        arg_value(args, name)
     }
 
     let debug_track_id = arg_value(&args, "--debug-track-id").and_then(|v| v.parse::<u32>().ok());

@@ -67,6 +67,7 @@ const DEFAULT_ITERATIONS: usize = 10;
 /// let (harmonic, percussive) = hpss_decompose(&magnitude_spec, 10)?;
 /// # Ok::<(), stratum_dsp::AnalysisError>(())
 /// ```
+#[allow(clippy::type_complexity)]
 pub fn hpss_decompose(
     magnitude_spec: &[Vec<f32>],
     margin: usize,
@@ -104,8 +105,8 @@ pub fn hpss_decompose(
     );
 
     // Initialize harmonic and percussive with input spectrogram
-    let mut harmonic: Vec<Vec<f32>> = magnitude_spec.iter().map(|frame| frame.clone()).collect();
-    let mut percussive: Vec<Vec<f32>> = magnitude_spec.iter().map(|frame| frame.clone()).collect();
+    let mut harmonic: Vec<Vec<f32>> = magnitude_spec.to_vec();
+    let mut percussive: Vec<Vec<f32>> = magnitude_spec.to_vec();
 
     // Iterative refinement
     for iteration in 0..DEFAULT_ITERATIONS {
@@ -180,7 +181,9 @@ fn apply_horizontal_median_filter(spectrogram: &[Vec<f32>], margin: usize) -> Ve
     let n_bins = spectrogram[0].len();
     let mut filtered = vec![vec![0.0f32; n_bins]; n_frames];
 
+    #[allow(clippy::needless_range_loop)]
     for bin_idx in 0..n_bins {
+        #[allow(clippy::needless_range_loop)]
         for frame_idx in 0..n_frames {
             // Collect values in window around current frame
             let start = frame_idx.saturating_sub(margin);
@@ -192,7 +195,7 @@ fn apply_horizontal_median_filter(spectrogram: &[Vec<f32>], margin: usize) -> Ve
             window.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median = if window.is_empty() {
                 0.0
-            } else if window.len() % 2 == 0 {
+            } else if window.len().is_multiple_of(2) {
                 (window[window.len() / 2 - 1] + window[window.len() / 2]) * 0.5
             } else {
                 window[window.len() / 2]
@@ -212,7 +215,9 @@ fn apply_vertical_median_filter(spectrogram: &[Vec<f32>], margin: usize) -> Vec<
     let n_bins = spectrogram[0].len();
     let mut filtered = vec![vec![0.0f32; n_bins]; n_frames];
 
+    #[allow(clippy::needless_range_loop)]
     for frame_idx in 0..n_frames {
+        #[allow(clippy::needless_range_loop)]
         for bin_idx in 0..n_bins {
             // Collect values in window around current bin
             let start = bin_idx.saturating_sub(margin);
@@ -224,7 +229,7 @@ fn apply_vertical_median_filter(spectrogram: &[Vec<f32>], margin: usize) -> Vec<
             window.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median = if window.is_empty() {
                 0.0
-            } else if window.len() % 2 == 0 {
+            } else if window.len().is_multiple_of(2) {
                 (window[window.len() / 2 - 1] + window[window.len() / 2]) * 0.5
             } else {
                 window[window.len() / 2]
@@ -276,7 +281,7 @@ pub fn detect_hpss_onsets(
         return Ok(Vec::new());
     }
 
-    if threshold_percentile < 0.0 || threshold_percentile > 1.0 {
+    if !(0.0..=1.0).contains(&threshold_percentile) {
         return Err(AnalysisError::InvalidInput(format!(
             "Threshold percentile must be in [0, 1], got {}",
             threshold_percentile
@@ -368,6 +373,7 @@ pub fn detect_hpss_onsets(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 

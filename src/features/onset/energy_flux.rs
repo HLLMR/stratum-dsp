@@ -243,6 +243,7 @@ pub fn detect_energy_flux_onsets(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 
@@ -310,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::needless_range_loop)]
     fn test_energy_flux_kick_pattern_120_bpm() {
         // Generate 4-on-floor kick pattern at 120 BPM
         let sample_rate = 44100.0;

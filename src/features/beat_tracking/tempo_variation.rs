@@ -132,7 +132,7 @@ pub fn detect_tempo_variations(
     }
 
     // Segment duration: use 4-8 seconds depending on total duration
-    let segment_duration = (total_duration / 4.0).max(4.0).min(8.0);
+    let segment_duration = (total_duration / 4.0).clamp(4.0, 8.0);
     let overlap = segment_duration * 0.5; // 50% overlap
 
     let mut segments = Vec::new();
@@ -186,7 +186,7 @@ pub fn detect_tempo_variations(
                 };
 
                 // Confidence based on CV (lower CV = higher confidence)
-                let confidence = (1.0 - (cv / 0.3).min(1.0)).max(0.0);
+                let confidence = (1.0 - (cv / 0.3).min(1.0)).max(0.0); // Complex: inner min, then outer max
 
                 // Mark as variable if CV exceeds threshold
                 let is_variable = cv > TEMPO_VARIATION_THRESHOLD;

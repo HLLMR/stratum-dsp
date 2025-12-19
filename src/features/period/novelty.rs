@@ -95,12 +95,12 @@ impl MelFilterbank {
         }
         let n_mels = n_mels.max(4);
         let nyquist = sample_rate as f32 * 0.5;
-        let fmin = fmin_hz.max(0.0).min(nyquist.max(1.0));
+        let fmin = fmin_hz.max(0.0).min(nyquist.max(1.0)); // Complex: max then min with another max
         let mut fmax = fmax_hz;
         if !(fmax.is_finite() && fmax > 0.0) {
             fmax = nyquist;
         }
-        let fmax = fmax.min(nyquist).max(fmin + 1.0);
+        let fmax = fmax.clamp(fmin + 1.0, nyquist);
 
         // Infer FFT size from rFFT bins: n_bins = fft_size/2 + 1
         let fft_size = (n_bins - 1) * 2;
@@ -140,6 +140,7 @@ impl MelFilterbank {
             }
 
             // Rising slope: left..center
+            #[allow(clippy::needless_range_loop)]
             for b in left..=center {
                 let w = if b == left {
                     0.0
@@ -151,6 +152,7 @@ impl MelFilterbank {
                 }
             }
             // Falling slope: center..right
+            #[allow(clippy::needless_range_loop)]
             for b in center..=right {
                 let w = if b == right {
                     0.0
@@ -359,6 +361,7 @@ pub fn superflux_novelty(
         let curr = &log_frames[i];
 
         let mut sum = 0.0f32;
+        #[allow(clippy::needless_range_loop)]
         for b in 0..n_bins {
             let start = b.saturating_sub(k);
             let end = (b + k + 1).min(n_bins);
@@ -425,6 +428,7 @@ pub fn superflux_novelty_band(
         let curr = &log_frames[i];
 
         let mut sum = 0.0f32;
+        #[allow(clippy::needless_range_loop)]
         for b in start..end {
             let local_start = b.saturating_sub(k).max(start);
             let local_end = (b + k + 1).min(end);
@@ -578,6 +582,7 @@ pub fn mel_superflux_novelty(
         }
 
         let mut sum = 0.0f32;
+        #[allow(clippy::needless_range_loop)]
         for b in 0..n {
             let start = b.saturating_sub(k);
             let end = (b + k + 1).min(n);
@@ -865,6 +870,7 @@ pub fn combined_novelty(spectral: &[f32], energy: &[f32], hfc: &[f32]) -> Vec<f3
 ///
 /// This is a tuning hook: novelty weighting and conditioning strongly affects whether the
 /// novelty emphasizes the beat-level pulse vs subdivisions (hi-hats) vs harmonic motion.
+#[allow(clippy::too_many_arguments)]
 pub fn combined_novelty_with_params(
     spectral: &[f32],
     energy: &[f32],
@@ -1059,7 +1065,7 @@ mod tests {
 
         assert_eq!(combined.len(), 5);
         // Conditioning can reshape small synthetic examples; just validate normalization/range.
-        assert!(combined.iter().all(|&v| v >= 0.0 && v <= 1.0));
+        assert!(combined.iter().all(|&v| (0.0..=1.0).contains(&v)));
         assert!(combined.iter().copied().fold(0.0f32, f32::max) > 0.0);
     }
 

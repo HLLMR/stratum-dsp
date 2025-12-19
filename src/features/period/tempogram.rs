@@ -222,6 +222,7 @@ pub fn estimate_bpm_tempogram_with_candidates(
 }
 
 /// Estimate BPM using tempogram analysis with optional **multi-band novelty fusion**.
+#[allow(clippy::too_many_arguments)]
 pub fn estimate_bpm_tempogram_with_candidates_band_fusion(
     magnitude_spec_frames: &[Vec<f32>],
     sample_rate: u32,
@@ -276,8 +277,10 @@ fn estimate_bpm_tempogram_impl(
     let freq_resolution = sample_rate as f32 / fft_size as f32;
 
     fn hz_to_bin(freq_hz: f32, freq_resolution: f32, n_bins: usize) -> usize {
-        if !(freq_hz.is_finite() && freq_hz > 0.0)
-            || !(freq_resolution.is_finite() && freq_resolution > 0.0)
+        if !freq_hz.is_finite()
+            || freq_hz <= 0.0
+            || !freq_resolution.is_finite()
+            || freq_resolution <= 0.0
         {
             return 0;
         }
@@ -715,7 +718,7 @@ fn estimate_bpm_tempogram_impl(
     }
 
     log::debug!(
-        "Tempogram metrical selection: chosen {:.2} BPM (score={:.3}, conf={:.3}, fft_norm={:.3}, autocorr_norm={:.3}), primary FFT={:.2} (conf={:.3}), primary Autocorr={:.2} (conf={:.3}), variants={}",
+        "Tempogram metrical selection: chosen {:.2} BPM (score={:.3}, conf={:.3}, fft_norm={:.3}, autocorr_norm={:.3}), primary FFT={:.2} (conf={:.3}), primary Autocorr={:.2} (conf={:.3}), variants={:?}",
         best.bpm,
         best.score,
         confidence,
@@ -725,7 +728,7 @@ fn estimate_bpm_tempogram_impl(
         fft_primary_conf,
         autocorr_primary_bpm,
         autocorr_primary_conf,
-        format!(
+        format_args!(
             "seed=[{}], score=[{}]",
             seed_variants.iter().map(|v| v.name).collect::<Vec<_>>().join("+"),
             score_variants.iter().map(|v| v.name).collect::<Vec<_>>().join("+")
@@ -772,6 +775,7 @@ fn estimate_bpm_tempogram_impl(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 
@@ -782,10 +786,10 @@ mod tests {
 
         // Add periodic pattern (simulating 120 BPM)
         let period = 43; // Approximate for 120 BPM at 44.1kHz, 512 hop
-        for i in 0..spectrogram.len() {
+        for (i, frame) in spectrogram.iter_mut().enumerate() {
             if i % period == 0 {
                 for bin in 0..512 {
-                    spectrogram[i][bin] = 1.0;
+                    frame[bin] = 1.0;
                 }
             }
         }

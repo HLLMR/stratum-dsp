@@ -140,7 +140,7 @@ pub fn autocorrelation_tempogram(
         let lag_frames = frames_per_beat as usize;
 
         // For each frame, compare with frame at tempo lag
-        for i in 0..novelty_curve.len() {
+        for (i, _) in novelty_curve.iter().enumerate() {
             let j = i + lag_frames;
             if j < novelty_curve.len() {
                 // Autocorrelation: compare frames at tempo interval
@@ -239,9 +239,9 @@ mod tests {
         // Create novelty curve with periodicity at frames_per_beat
         let period = frames_per_beat as usize;
         let mut novelty = vec![0.0f32; 500];
-        for i in 0..novelty.len() {
+        for (i, val) in novelty.iter_mut().enumerate() {
             if i % period == 0 {
-                novelty[i] = 1.0;
+                *val = 1.0;
             }
         }
 

@@ -58,12 +58,7 @@ fn decode_audio_file(path: &str) -> Result<(Vec<f32>, u32), Box<dyn std::error::
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
     let mut all_samples: Vec<f32> = Vec::new();
 
-    loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(_) => break,
-        };
-
+    while let Ok(packet) = format.next_packet() {
         if packet.track_id() != track_id {
             continue;
         }

@@ -117,6 +117,7 @@ impl KeyTemplates {
             }
 
             // Minor keys: rotate C-minor base profile (tonic at index 0) the same way we rotate major.
+            #[allow(clippy::needless_range_loop)]
             for semitone_idx in 0..12 {
                 let source_idx = (semitone_idx + 12 - key_idx) % 12;
                 minor[key_idx][semitone_idx] = c_minor[source_idx];
@@ -196,6 +197,7 @@ impl KeyTemplates {
             }
 
             // Minor keys: rotate C minor template
+            #[allow(clippy::needless_range_loop)]
             for semitone_idx in 0..12 {
                 let source_idx = (semitone_idx + 12 - key_idx) % 12;
                 minor[key_idx][semitone_idx] = c_minor[source_idx];

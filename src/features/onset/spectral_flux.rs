@@ -75,7 +75,7 @@ pub fn detect_spectral_flux_onsets(
         return Ok(Vec::new());
     }
 
-    if threshold_percentile < 0.0 || threshold_percentile > 1.0 {
+    if !(0.0..=1.0).contains(&threshold_percentile) {
         return Err(AnalysisError::InvalidInput(format!(
             "Threshold percentile must be in [0, 1], got {}",
             threshold_percentile
@@ -258,7 +258,7 @@ mod tests {
         assert!(!onsets.is_empty(), "Should detect at least one onset");
         // Onset should be at or near frame 5-6 (the change happens at frame 5, so flux is between 4-5 and 5-6)
         assert!(
-            onsets.iter().any(|&f| f >= 4 && f <= 7),
+            onsets.iter().any(|&f| (4..=7).contains(&f)),
             "Onset should be near frame 5-6, got {:?}",
             onsets
         );

@@ -1335,7 +1335,7 @@ pub fn analyze_audio(
                         && config.key_segment_hop_frames >= 1
                     {
                         let seg_len = config.key_segment_len_frames.min(chroma_slice.len());
-                        let hop = config.key_segment_hop_frames.min(seg_len).max(1);
+                        let hop = config.key_segment_hop_frames.min(seg_len).max(1); // Not a simple clamp: min first, then max
                         let min_clarity = config.key_segment_min_clarity.clamp(0.0, 1.0);
 
                         let mut acc_scores: Vec<(Key, f32)> = Vec::with_capacity(24);
@@ -1420,7 +1420,7 @@ pub fn analyze_audio(
                                 0.0
                             };
                             let confidence = if best_score > 0.0 {
-                                ((best_score - second_score) / best_score).max(0.0).min(1.0)
+                                ((best_score - second_score) / best_score).clamp(0.0, 1.0)
                             } else {
                                 0.0
                             };
@@ -1470,7 +1470,7 @@ pub fn analyze_audio(
                         // Optional debug dump to stderr (captured by validation harness)
                         if let Some(track_id) = config.debug_track_id {
                             // Weighted pitch-class summary (for diagnosing collapses)
-                            let mut agg = vec![0.0f32; 12];
+                            let mut agg = [0.0f32; 12];
                             let mut used = 0usize;
                             for (idx, ch) in chroma_slice.iter().enumerate() {
                                 let w = frame_weights
