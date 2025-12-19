@@ -5,7 +5,7 @@
 //! Algorithm:
 //! 1. Weight higher frequencies more heavily (linear weighting: bin_index * magnitude^2)
 //! 2. Compute weighted sum per frame (HFC value)
-//! 3. Compute derivative (flux): HFC_flux[n] = max(0, HFC[n] - HFC[n-1])
+//! 3. Compute derivative (flux): `HFC_flux[n] = max(0, HFC[n] - HFC[n-1])`
 //! 4. Apply percentile-based threshold and peak-pick
 //!
 //! # Example
@@ -57,9 +57,9 @@ use crate::error::AnalysisError;
 /// # Algorithm
 ///
 /// For each frame n:
-/// 1. Compute HFC[n] = sum over k (k * |X[n,k]|^2)
+/// 1. Compute `HFC[n] = sum over k (k * |X[n,k]|^2)`
 ///    where k is the frequency bin index (0 to n_bins-1)
-/// 2. Compute flux: HFC_flux[n] = max(0, HFC[n] - HFC[n-1])
+/// 2. Compute flux: `HFC_flux[n] = max(0, HFC[n] - HFC[n-1])`
 /// 3. Threshold and peak-pick
 ///
 /// # Example

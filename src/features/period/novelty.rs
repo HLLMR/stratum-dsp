@@ -769,7 +769,7 @@ pub fn hfc_novelty(
 
 /// Band-limited variant of `hfc_novelty` using bins `[bin_start, bin_end)`.
 ///
-/// Note: We retain the **absolute** bin index weighting \(k * |X[k]|^2\) inside the band
+/// Note: We retain the **absolute** bin index weighting `k * |X[k]|^2` inside the band
 /// (not a reindexed 0..N band), to keep the interpretation consistent across bands.
 pub fn hfc_novelty_band(
     magnitude_spec_frames: &[Vec<f32>],

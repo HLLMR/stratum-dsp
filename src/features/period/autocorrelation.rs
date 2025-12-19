@@ -76,7 +76,7 @@ const EPSILON: f32 = 1e-10;
 ///
 /// 1. **Binary Signal**: Convert onsets to frame-based binary signal
 ///    - Frame index = `onset_sample / hop_size`
-///    - Signal[frame] = 1 if onset present, else 0
+///    - `Signal[frame] = 1` if onset present, else 0
 ///
 /// 2. **Autocorrelation**: Compute using FFT acceleration
 ///    - `ACF[lag] = IFFT(|FFT(signal)|²)`

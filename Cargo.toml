@@ -35,6 +35,10 @@ hound = "3.5"  # WAV file reading for integration tests
 default = []
 ml = ["ort"]
 
+[package.metadata.docs.rs]
+features = ["default"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 name = "stratum_dsp"
 path = "src/lib.rs"

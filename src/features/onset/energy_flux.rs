@@ -5,7 +5,7 @@
 //! Algorithm:
 //! 1. Divide audio into overlapping frames (frame_size, hop_size)
 //! 2. Compute RMS energy per frame
-//! 3. Compute energy derivative (flux): E_flux[n] = max(0, E[n] - E[n-1])
+//! 3. Compute energy derivative (flux): `E_flux[n] = max(0, E[n] - E[n-1])`
 //! 4. Apply threshold and peak-pick to find onsets
 //!
 //! # Example
